@@ -1,0 +1,124 @@
+"""
+Mock Price Generator
+====================
+Simulates realistic OHLCV (Open/High/Low/Close/Volume) data using
+Geometric Brownian Motion — the same model used in Black-Scholes options pricing.
+
+WHY GEOMETRIC BROWNIAN MOTION?
+  Real stock prices are multiplicative (% changes), not additive.
+  A $100 stock moving +1% is different from a $10 stock moving +1%.
+  GBM handles this correctly. Formula: dS = μSdt + σSdW
+  where μ = drift (trend), σ = volatility, dW = random Wiener process
+
+This is Phase 1. In Phase 3, we'll replace this with real Alpaca WebSocket data.
+"""
+import asyncio
+import math
+import random
+import time
+from dataclasses import dataclass, field
+from typing import AsyncGenerator
+
+
+@dataclass
+class Asset:
+    symbol: str
+    name: str
+    price: float
+    sector: str
+    # GBM parameters
+    mu: float = 0.0001       # drift per tick (annualised ~2.5%)
+    sigma: float = 0.002     # volatility per tick (annualised ~31%)
+    # State
+    open_price: float = field(init=False)
+    high: float = field(init=False)
+    low: float = field(init=False)
+    volume: int = field(default=0)
+
+    def __post_init__(self):
+        self.open_price = self.price
+        self.high = self.price
+        self.low = self.price
+
+    def tick(self) -> dict:
+        """
+        Advance price by one tick using GBM.
+        Returns a full OHLCV candle dict ready to send to the frontend.
+        """
+        # Wiener process increment: random normal draw scaled by sqrt(dt)
+        # dt = 1 second, so sqrt(dt) = 1
+        epsilon = random.gauss(0, 1)
+        
+        # Core GBM formula: S_new = S * exp((μ - σ²/2)dt + σ*ε*sqrt(dt))
+        drift = (self.mu - 0.5 * self.sigma ** 2)
+        shock = self.sigma * epsilon
+        self.price = self.price * math.exp(drift + shock)
+        
+        # Track intraday high/low
+        self.high = max(self.high, self.price)
+        self.low = min(self.low, self.price)
+        
+        # Simulate volume: higher during volatility (realistic)
+        base_volume = random.randint(1000, 5000)
+        vol_multiplier = 1 + abs(epsilon) * 2
+        self.volume += int(base_volume * vol_multiplier)
+        
+        change = self.price - self.open_price
+        change_pct = (change / self.open_price) * 100
+
+        return {
+            "symbol": self.symbol,
+            "name": self.name,
+            "sector": self.sector,
+            "price": round(self.price, 2),
+            "open": round(self.open_price, 2),
+            "high": round(self.high, 2),
+            "low": round(self.low, 2),
+            "volume": self.volume,
+            "change": round(change, 2),
+            "change_pct": round(change_pct, 4),
+            "timestamp": int(time.time() * 1000),  # milliseconds for JS
+        }
+
+
+# ── Asset Universe ─────────────────────────────────────────────────────────────
+# Covers all major sectors so the heatmap looks rich and varied
+ASSETS = [
+    # Tech
+    Asset("AAPL",  "Apple",          182.50, "Technology",  sigma=0.0018),
+    Asset("MSFT",  "Microsoft",      415.20, "Technology",  sigma=0.0016),
+    Asset("NVDA",  "NVIDIA",         875.40, "Technology",  sigma=0.0035, mu=0.0003),
+    Asset("GOOGL", "Alphabet",       175.80, "Technology",  sigma=0.0020),
+    Asset("META",  "Meta",           490.30, "Technology",  sigma=0.0025),
+    Asset("AMD",   "AMD",            168.40, "Technology",  sigma=0.0032),
+    # Finance
+    Asset("JPM",   "JPMorgan",       195.60, "Finance",     sigma=0.0015),
+    Asset("GS",    "Goldman Sachs",  445.80, "Finance",     sigma=0.0018),
+    Asset("V",     "Visa",           270.20, "Finance",     sigma=0.0012),
+    # Healthcare
+    Asset("JNJ",   "J&J",           147.30, "Healthcare",  sigma=0.0010),
+    Asset("PFE",   "Pfizer",         27.80,  "Healthcare",  sigma=0.0020),
+    # Energy
+    Asset("XOM",   "Exxon",          118.40, "Energy",      sigma=0.0022),
+    Asset("CVX",   "Chevron",        152.60, "Energy",      sigma=0.0020),
+    # Consumer
+    Asset("AMZN",  "Amazon",         185.20, "Consumer",    sigma=0.0022),
+    Asset("TSLA",  "Tesla",          175.50, "Consumer",    sigma=0.0045, mu=-0.0001),
+    # Crypto ETFs
+    Asset("IBIT",  "iShares Bitcoin ETF", 38.40, "Crypto",  sigma=0.0060, mu=0.0002),
+]
+
+
+async def price_stream(interval_seconds: float = 1.0) -> AsyncGenerator[list[dict], None]:
+    """
+    Async generator that yields a list of all asset ticks every `interval_seconds`.
+    
+    HOW ASYNC GENERATORS WORK:
+    - `yield` suspends the function and returns a value to the caller
+    - `await asyncio.sleep()` yields control back to the event loop (non-blocking)
+    - This means thousands of WebSocket clients can be served concurrently
+      without any thread blocking
+    """
+    while True:
+        await asyncio.sleep(interval_seconds)
+        yield [asset.tick() for asset in ASSETS]

@@ -1,0 +1,40 @@
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# WebSocket + async
+websockets>=13.0
+python-multipart==0.0.9
+
+# Redis pub/sub (async client)
+redis[asyncio]==5.0.4
+
+# HTTP client (for Alpaca, NewsAPI)
+httpx==0.27.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.25.0
+yfinance>=0.2.40
+
+# ML
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+shap>=0.45.0
+
+# Sentiment analysis
+vaderSentiment==3.3.2
+# transformers==4.40.0      # FinBERT (optional, disabled to optimize build size)
+# torch==2.2.2              # FinBERT runtime (optional, disabled to optimize build size)
+
+# LLM agents (optional, disabled to optimize build size and resolve version conflict)
+# langchain==0.1.20
+# langchain-openai==0.1.7
+# langgraph==0.0.55
+
+# Config
+python-dotenv==1.0.1
+pydantic-settings==2.2.1
+
+# Testing
+pytest==8.2.1

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+.venv/
+venv/
+*.log
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+
+# Ignored files
+README.md
+*.tsbuildinfo
