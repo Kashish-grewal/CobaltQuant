@@ -27,6 +27,8 @@ import asyncio
 import logging
 import math
 import time
+import os
+import json
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -147,9 +149,31 @@ def _train_and_predict(ticker: str) -> SignalResult:
         import xgboost as xgb
         import shap as shap_lib
 
-        # ── 1. Fetch 1 year of daily data ─────────────────────────
-        raw = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
-        if raw.empty or len(raw) < 60:
+        # ── 1. Check if we can load a pre-trained model ────────────
+        model_path = f"models/{ticker}.json"
+        meta_path = f"models/{ticker}_meta.json"
+        
+        os.makedirs("models", exist_ok=True)
+        use_cached_model = False
+        accuracy = 0.0
+
+        if os.path.exists(model_path) and os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r") as f:
+                    meta = json.load(f)
+                if time.time() - meta.get("trained_at", 0) < 86400:  # 24 hours
+                    use_cached_model = True
+                    accuracy = meta.get("model_accuracy", 0.0)
+            except Exception as e:
+                logger.warning(f"Failed to check cached model for {ticker}: {e}")
+
+        # Fetch period: 3 months if loading cached model, 1 year if training
+        fetch_period = "3mo" if use_cached_model else "1y"
+        min_rows = 40 if use_cached_model else 60
+
+        # ── 2. Fetch data ─────────────────────────────────────────
+        raw = yf.download(ticker, period=fetch_period, interval="1d", progress=False, auto_adjust=True)
+        if raw.empty or len(raw) < min_rows:
             return SignalResult(ticker=ticker, signal="HOLD", confidence=0.5,
                                 probabilities={}, shap_values=[], feature_values={},
                                 model_accuracy=0.0, error="Insufficient data")
@@ -158,44 +182,81 @@ def _train_and_predict(ticker: str) -> SignalResult:
         if isinstance(raw.columns, pd.MultiIndex):
             raw.columns = raw.columns.get_level_values(0)
 
-        # ── 2. Feature engineering ────────────────────────────────
+        # ── 3. Feature engineering ────────────────────────────────
         feats = build_features(raw)
-        close = raw["Close"].reindex(feats.index)
+        if feats.empty:
+            return SignalResult(ticker=ticker, signal="HOLD", confidence=0.5,
+                                probabilities={}, shap_values=[], feature_values={},
+                                model_accuracy=0.0, error="Insufficient features")
 
-        # ── 3. Labels: next-5-day return ─────────────────────────
-        fwd_return = close.shift(-5).pct_change(5) * 100  # % return
-        labels = pd.Series(0, index=feats.index)  # HOLD default
-        labels[fwd_return > 0.75]  = 1  # BUY
-        labels[fwd_return < -0.75] = 2  # SELL
+        # ── 4. If using cached model, load it ──────────────────────
+        model = xgb.XGBClassifier()
+        if use_cached_model:
+            try:
+                model.load_model(model_path)
+                model.classes_ = np.array([0, 1, 2])
+                logger.info(f"🎯 Loaded pre-trained XGBoost model for {ticker}")
+            except Exception as e:
+                logger.warning(f"Failed to load cached model for {ticker}: {e}")
+                use_cached_model = False
+                # Fetch 1 year of data to train if model load fails
+                raw = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
+                if raw.empty or len(raw) < 60:
+                    return SignalResult(ticker=ticker, signal="HOLD", confidence=0.5,
+                                        probabilities={}, shap_values=[], feature_values={},
+                                        model_accuracy=0.0, error="Insufficient data for training fallback")
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = raw.columns.get_level_values(0)
+                feats = build_features(raw)
 
-        # Align and drop future-looking tail
-        df_ml = feats.copy()
-        df_ml["y"] = labels
-        df_ml = df_ml.dropna().iloc[:-5]  # remove last 5 rows (no label yet)
+        if not use_cached_model:
+            close = raw["Close"].reindex(feats.index)
+            # Labels: next-5-day return
+            fwd_return = close.shift(-5).pct_change(5) * 100  # % return
+            labels = pd.Series(0, index=feats.index)  # HOLD default
+            labels[fwd_return > 0.75]  = 1  # BUY
+            labels[fwd_return < -0.75] = 2  # SELL
 
-        X = df_ml[FEATURE_NAMES].values
-        y = df_ml["y"].values
+            # Align and drop future-looking tail
+            df_ml = feats.copy()
+            df_ml["y"] = labels
+            df_ml = df_ml.dropna().iloc[:-5]  # remove last 5 rows (no label yet)
 
-        # ── 4. Train/test split — last 60 rows as hold-out ───────
-        split = max(len(X) - 60, int(len(X) * 0.8))
-        X_train, X_test = X[:split], X[split:]
-        y_train, y_test = y[:split], y[split:]
+            X = df_ml[FEATURE_NAMES].values
+            y = df_ml["y"].values
 
-        model = xgb.XGBClassifier(
-            n_estimators=120,
-            max_depth=4,
-            learning_rate=0.08,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            use_label_encoder=False,
-            eval_metric="mlogloss",
-            verbosity=0,
-        )
-        model.fit(X_train, y_train)
+            # Train/test split — last 60 rows as hold-out
+            split = max(len(X) - 60, int(len(X) * 0.8))
+            X_train, X_test = X[:split], X[split:]
+            y_train, y_test = y[:split], y[split:]
 
-        # ── 5. Backtest accuracy ──────────────────────────────────
-        preds_test = model.predict(X_test)
-        accuracy   = float(np.mean(preds_test == y_test))
+            model = xgb.XGBClassifier(
+                n_estimators=120,
+                max_depth=4,
+                learning_rate=0.08,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                use_label_encoder=False,
+                eval_metric="mlogloss",
+                verbosity=0,
+            )
+            model.fit(X_train, y_train)
+
+            # Backtest accuracy
+            preds_test = model.predict(X_test)
+            accuracy   = float(np.mean(preds_test == y_test))
+
+            # Save model and metadata
+            try:
+                model.save_model(model_path)
+                with open(meta_path, "w") as f:
+                    json.dump({
+                        "trained_at": time.time(),
+                        "model_accuracy": accuracy,
+                    }, f)
+                logger.info(f"💾 Saved freshly trained XGBoost model for {ticker}")
+            except Exception as e:
+                logger.warning(f"Failed to save trained model for {ticker}: {e}")
 
         # ── 6. Predict on latest row ──────────────────────────────
         latest_feats = feats[FEATURE_NAMES].values[-1].reshape(1, -1)

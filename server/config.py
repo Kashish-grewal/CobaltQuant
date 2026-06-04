@@ -37,6 +37,7 @@ class Settings(BaseSettings):
         # Look for .env in project root (one level up from server/)
         env_file = str(__import__("pathlib").Path(__file__).parent.parent / ".env")
         case_sensitive = False
+        extra = "ignore"
 
 
 @lru_cache()

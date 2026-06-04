@@ -28,19 +28,64 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+import redis.asyncio as aioredis
+import json
+
+# Redis connection for publishing messages
+redis_pub = aioredis.from_url(settings.redis_url, decode_responses=True)
+
+
+async def publish_message(channel: str, message: dict):
+    """
+    Publishes a message to a Redis channel.
+    Falls back to direct local broadcasting if Redis is unavailable.
+    """
+    try:
+        await redis_pub.publish(channel, json.dumps(message))
+    except Exception as e:
+        logger.debug(f"Redis publish failed, falling back to local broadcast: {e}")
+        from ws_manager import manager
+        await manager.broadcast(channel=channel, message=message)
+
+
+async def redis_listener_task():
+    """
+    Background subscriber task. Listens to Redis channels ('prices', 'sentiment')
+    and broadcasts to locally connected WebSocket clients.
+    """
+    r = aioredis.from_url(settings.redis_url, decode_responses=True)
+    pubsub = r.pubsub()
+    try:
+        await pubsub.subscribe("prices", "sentiment")
+        logger.info("📡 Redis Pub/Sub listener subscribed to 'prices' and 'sentiment' channels.")
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                channel = message["channel"]
+                payload = json.loads(message["data"])
+                from ws_manager import manager
+                await manager.broadcast(channel=channel, message=payload)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.warning(f"Redis Pub/Sub listener connection failed or lost (normal in standalone/offline mode): {e}")
+    finally:
+        try:
+            await pubsub.unsubscribe("prices", "sentiment")
+        except Exception:
+            pass
+        await r.close()
+
 
 async def _mock_broadcast_loop():
     """
     Singleton mock broadcast loop.
     Runs ONCE in the background — sends ticks to ALL connected clients.
-    Never create this per-client (that was the N×N bug).
     """
     from data.mock_prices import price_stream
-    from ws_manager import manager
 
     logger.info("📊 Mock broadcast loop started (1s ticks)")
     async for ticks in price_stream(interval_seconds=1.0):
-        await manager.broadcast(
+        await publish_message(
             channel="prices",
             message={
                 "type": "price_update",
@@ -56,9 +101,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"🚀 CobaltQuant — DATA_MODE={settings.data_mode}")
     tasks = []
 
+    # Start the Redis subscriber task
+    tasks.append(asyncio.create_task(redis_listener_task()))
+
     async def _on_tick(ticks: list[dict], source: str):
-        from ws_manager import manager
-        await manager.broadcast(
+        await publish_message(
             channel="prices",
             message={
                 "type": "price_update",
@@ -100,12 +147,11 @@ async def lifespan(app: FastAPI):
     # ── Sentiment broadcast loop (all data modes) ────────────────────
     async def _sentiment_loop():
         from data.sentiment_engine import SentimentEngine
-        from ws_manager import manager as _mgr   # explicit import — same singleton
         import time as _time
         engine = SentimentEngine()
         logger.info("💬 Sentiment engine started (8s ticks)")
         async for snapshot in engine.stream(interval=8.0):
-            await _mgr.broadcast(
+            await publish_message(
                 channel="sentiment",
                 message={
                     "type": "sentiment_update",
@@ -124,8 +170,16 @@ async def lifespan(app: FastAPI):
             await t
         except asyncio.CancelledError:
             pass
+            
     if app_state.alpaca_client:
         app_state.alpaca_client.stop()
+        
+    # Close Redis client connections
+    try:
+        await redis_pub.close()
+    except Exception:
+        pass
+        
     logger.info("🛑 Shutdown complete")
 
 

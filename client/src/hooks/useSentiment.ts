@@ -20,7 +20,8 @@ interface UseSentimentReturn {
   lastUpdate:  number | null;
 }
 
-const WS_URL    = "ws://localhost:8000/ws/sentiment";
+const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+const WS_URL    = `${WS_BASE_URL}/ws/sentiment`;
 const MIN_DELAY = 500;
 const MAX_DELAY = 8000;
 

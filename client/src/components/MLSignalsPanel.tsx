@@ -28,11 +28,22 @@ interface Props { ticker: string }
 function ShapWaterfall({ data }: { data: ShapEntry[] }) {
   const svgRef  = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+
+  // Resize observer for responsive D3 chart width
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver(() => {
+      setWidth(wrapRef.current?.clientWidth ?? 0);
+    });
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!data.length || !svgRef.current || !wrapRef.current) return;
 
-    const W      = wrapRef.current.clientWidth || 400;
+    const W      = width || wrapRef.current.clientWidth || 400;
     const barH   = 28;
     const gap    = 5;
     const labelW = 130;
@@ -40,73 +51,139 @@ function ShapWaterfall({ data }: { data: ShapEntry[] }) {
     const H      = data.length * (barH + gap) + 50;
 
     const svg = d3.select(svgRef.current).attr("width", W).attr("height", H);
-    svg.selectAll("*").remove();
+    
+    // Ensure container groups exist
+    let g = svg.select<SVGGElement>("g.main-group");
+    if (g.empty()) {
+      g = svg.append("g").attr("class", "main-group").attr("transform", `translate(${labelW},20)`);
+    }
+    
+    let labelsGroup = svg.select<SVGGElement>("g.labels-group");
+    if (labelsGroup.empty()) {
+      labelsGroup = svg.append("g").attr("class", "labels-group").attr("transform", "translate(0,20)");
+    }
 
     const maxAbs = d3.max(data, d => Math.abs(d.shap)) ?? 1;
     const barMax = W - labelW - valW - 20;
 
-    const g = svg.append("g").attr("transform", `translate(${labelW},20)`);
+    // Zero line
+    let zeroLine = g.select<SVGLineElement>("line.zero-line");
+    if (zeroLine.empty()) {
+      zeroLine = g.append("line")
+        .attr("class", "zero-line")
+        .attr("stroke", "rgba(255,255,255,0.12)")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "3,3");
+    }
+    zeroLine
+      .attr("x1", 0).attr("y1", 0)
+      .attr("x2", 0).attr("y2", H - 30);
 
-    data.forEach((d, i) => {
-      const y     = i * (barH + gap);
-      const bw    = (Math.abs(d.shap) / maxAbs) * (barMax * 0.85);
-      const color = d.shap > 0 ? "#26A69A" : "#EF5350";
-      const x0    = d.shap > 0 ? 0 : -bw;
+    // ── Bind BARS ──────────────────────────────────────────
+    const bars = g.selectAll<SVGRectElement, ShapEntry>("rect.bar")
+      .data(data, d => d.feature);
 
-      // Bar
-      g.append("rect")
-        .attr("x", x0).attr("y", y)
-        .attr("width", 0).attr("height", barH)
-        .attr("rx", 3).attr("fill", color).attr("opacity", 0.85)
-        .transition().duration(500).delay(i * 60)
-        .attr("width", bw);
+    // Enter + Update
+    bars.join(
+      enter => enter.append("rect")
+        .attr("class", "bar")
+        .attr("x", d => d.shap > 0 ? 0 : -((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)))
+        .attr("y", (d, i) => i * (barH + gap))
+        .attr("width", 0)
+        .attr("height", barH)
+        .attr("rx", 3)
+        .attr("fill", d => d.shap > 0 ? "#26A69A" : "#EF5350")
+        .attr("opacity", 0.85)
+        .call(enter => enter.transition().duration(500).delay((d, i) => i * 60)
+          .attr("width", d => (Math.abs(d.shap) / maxAbs) * (barMax * 0.85))),
+      update => update
+        .transition().duration(400)
+        .attr("x", d => d.shap > 0 ? 0 : -((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)))
+        .attr("y", (d, i) => i * (barH + gap))
+        .attr("width", d => (Math.abs(d.shap) / maxAbs) * (barMax * 0.85))
+        .attr("fill", d => d.shap > 0 ? "#26A69A" : "#EF5350"),
+      exit => exit.remove()
+    );
 
-      // SHAP value label inside bar
-      g.append("text")
-        .attr("x", d.shap > 0 ? Math.max(bw - 4, 4) : Math.min(-bw + 4, -4))
-        .attr("y", y + barH / 2 + 1)
-        .attr("text-anchor", d.shap > 0 ? "end" : "start")
+    // ── Bind BAR LABELS (values inside bars) ──────────────
+    const barLabels = g.selectAll<SVGTextElement, ShapEntry>("text.bar-label")
+      .data(data, d => d.feature);
+
+    barLabels.join(
+      enter => enter.append("text")
+        .attr("class", "bar-label")
+        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
+        .attr("text-anchor", d => d.shap > 0 ? "end" : "start")
         .attr("dominant-baseline", "middle")
         .attr("fill", "#fff")
         .attr("font-size", 9)
         .attr("font-family", "'JetBrains Mono',monospace")
         .attr("font-weight", "700")
-        .attr("opacity", bw > 30 ? 1 : 0)
-        .text((d.shap > 0 ? "+" : "") + d.shap.toFixed(3));
-    });
+        .attr("opacity", 0)
+        .text(d => (d.shap > 0 ? "+" : "") + d.shap.toFixed(3))
+        .call(enter => enter.transition().duration(500).delay((d, i) => i * 60)
+          .attr("x", d => {
+            const bw = (Math.abs(d.shap) / maxAbs) * (barMax * 0.85);
+            return d.shap > 0 ? Math.max(bw - 4, 4) : Math.min(-bw + 4, -4);
+          })
+          .attr("opacity", d => ((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)) > 30 ? 1 : 0)),
+      update => update
+        .text(d => (d.shap > 0 ? "+" : "") + d.shap.toFixed(3))
+        .transition().duration(400)
+        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
+        .attr("text-anchor", d => d.shap > 0 ? "end" : "start")
+        .attr("x", d => {
+          const bw = (Math.abs(d.shap) / maxAbs) * (barMax * 0.85);
+          return d.shap > 0 ? Math.max(bw - 4, 4) : Math.min(-bw + 4, -4);
+        })
+        .attr("opacity", d => ((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)) > 30 ? 1 : 0),
+      exit => exit.remove()
+    );
 
-    // Feature labels (left)
-    const labels = svg.append("g").attr("transform", `translate(0,20)`);
-    data.forEach((d, i) => {
-      const y = i * (barH + gap);
-      labels.append("text")
-        .attr("x", labelW - 8).attr("y", y + barH / 2 + 1)
+    // ── Bind FEATURE LABELS (left text) ──────────────────
+    const featLabels = labelsGroup.selectAll<SVGTextElement, ShapEntry>("text.feat-label")
+      .data(data, d => d.feature);
+
+    featLabels.join(
+      enter => enter.append("text")
+        .attr("class", "feat-label")
+        .attr("x", labelW - 8)
+        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
         .attr("text-anchor", "end")
         .attr("dominant-baseline", "middle")
         .attr("fill", "#8694A8")
         .attr("font-size", 10)
         .attr("font-family", "'Inter',sans-serif")
-        .text(d.feature);
+        .text(d => d.feature),
+      update => update
+        .transition().duration(400)
+        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1),
+      exit => exit.remove()
+    );
 
-      // Feature raw value (right)
-      labels.append("text")
-        .attr("x", labelW + barMax + 8).attr("y", y + barH / 2 + 1)
+    // ── Bind FEATURE RAW VALUES (right text) ──────────────
+    const rawLabels = labelsGroup.selectAll<SVGTextElement, ShapEntry>("text.raw-label")
+      .data(data, d => d.feature);
+
+    rawLabels.join(
+      enter => enter.append("text")
+        .attr("class", "raw-label")
+        .attr("x", labelW + barMax + 8)
+        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
         .attr("dominant-baseline", "middle")
         .attr("fill", "#4A5568")
         .attr("font-size", 9)
         .attr("font-family", "'JetBrains Mono',monospace")
-        .text(d.value.toFixed(2));
-    });
+        .text(d => d.value.toFixed(2)),
+      update => update
+        .text(d => d.value.toFixed(2))
+        .transition().duration(400)
+        .attr("x", labelW + barMax + 8)
+        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1),
+      exit => exit.remove()
+    );
 
-    // Zero line
-    g.append("line")
-      .attr("x1", 0).attr("y1", 0)
-      .attr("x2", 0).attr("y2", H - 30)
-      .attr("stroke", "rgba(255,255,255,0.12)")
-      .attr("stroke-width", 1)
-      .attr("stroke-dasharray", "3,3");
-
-  }, [data]);
+  }, [data, width]);
 
   return (
     <div ref={wrapRef} style={{ width: "100%" }}>
@@ -125,7 +202,7 @@ export default function MLSignalsPanel({ ticker }: Props) {
     setStatus("loading");
     setResult(null);
     try {
-      const res  = await fetch(`http://localhost:8000/api/signals/${t}`);
+      const res  = await fetch(`/api/signals/${t}`);
       const data = await res.json();
       setResult(data);
       setStatus("done");

@@ -21,7 +21,8 @@ interface UseDebateReturn {
   reset:        () => void;
 }
 
-const WS_URL = "ws://localhost:8000/ws/debate";
+const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+const WS_URL = `${WS_BASE_URL}/ws/debate`;
 
 const EMPTY: AgentText = { bull: "", bear: "", neutral: "" };
 

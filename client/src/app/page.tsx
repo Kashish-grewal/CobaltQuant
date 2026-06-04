@@ -33,6 +33,20 @@ const MLSignalsPanel = dynamic(() => import("@/components/MLSignalsPanel"), {
   ),
 });
 
+const SidebarMLSignals = dynamic(() => import("@/components/SidebarMLSignals"), {
+  ssr: false,
+  loading: () => (
+    <div className="loader"><div className="spinner" /><span>Loading signals</span></div>
+  ),
+});
+
+const SidebarDebate = dynamic(() => import("@/components/SidebarDebate"), {
+  ssr: false,
+  loading: () => (
+    <div className="loader"><div className="spinner" /><span>Loading debate</span></div>
+  ),
+});
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmt  = (n: number, d = 2) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtV = (v: number) => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(0)}K` : String(v);
@@ -87,6 +101,31 @@ export default function Dashboard() {
   const [sym, setSym]       = useState("AAPL");
   const [sector, setSector] = useState("All");
   const [ticks, setTicks]   = useState(0);
+
+  // Load selection from localStorage to persist across reloads
+  useEffect(() => {
+    const savedTab = localStorage.getItem("cobalt_tab");
+    if (savedTab) setTab(savedTab);
+    const savedSym = localStorage.getItem("cobalt_sym");
+    if (savedSym) setSym(savedSym);
+    const savedSector = localStorage.getItem("cobalt_sector");
+    if (savedSector) setSector(savedSector);
+  }, []);
+
+  const changeTab = (newTab: string) => {
+    setTab(newTab);
+    localStorage.setItem("cobalt_tab", newTab);
+  };
+
+  const changeSym = (newSym: string) => {
+    setSym(newSym);
+    localStorage.setItem("cobalt_sym", newSym);
+  };
+
+  const changeSector = (newSector: string) => {
+    setSector(newSector);
+    localStorage.setItem("cobalt_sector", newSector);
+  };
 
   const [rowFlash, setRowFlash]     = useState<Record<string, "fp"|"fn">>({});
   const [priceFlash, setPriceFlash] = useState<"fp"|"fn"|null>(null);
@@ -163,7 +202,7 @@ export default function Dashboard() {
           </div>
           <span className="brand-wordmark">Cobalt<em>Quant</em></span>
           <div className="divider" />
-          <span className="brand-tag">Terminal</span>
+          <span className="brand-tag">Kashish's Terminal</span>
         </div>
 
         {/* Nav */}
@@ -172,7 +211,7 @@ export default function Dashboard() {
             <button
               key={t.id}
               className={`nav-tab ${tab === t.id ? "active" : ""}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => changeTab(t.id)}
             >
               {t.label}
               {t.phase && <span className="nav-phase">P{t.phase}</span>}
@@ -203,7 +242,7 @@ export default function Dashboard() {
                 <button
                   key={s}
                   className={`f-chip ${sector === s ? "on" : ""}`}
-                  onClick={() => setSector(s)}
+                  onClick={() => changeSector(s)}
                 >
                   {SECTOR_SHORT[s]}
                 </button>
@@ -221,7 +260,7 @@ export default function Dashboard() {
                   <div
                     key={a.symbol}
                     className={`asset-row ${sym === a.symbol ? "active" : ""} ${rowFlash[a.symbol] ?? ""}`}
-                    onClick={() => setSym(a.symbol)}
+                    onClick={() => changeSym(a.symbol)}
                   >
                     <div className="ar-info">
                       <span className="ar-sym">{a.symbol}</span>
@@ -299,68 +338,8 @@ export default function Dashboard() {
 
           {/* RIGHT: Signals + Agents */}
           <aside className="right-panel">
-
-            {/* ML Signals */}
-            <div className="rp-section">
-              <div className="rp-header">
-                <div className="rp-title">
-                  ML Signals
-                  <span className="rp-sym">{sym}</span>
-                </div>
-                <span className="rp-phase">Phase 4</span>
-              </div>
-              <div className="signal-table">
-                {SIGNALS.map(s => (
-                  <div key={s.name} className="signal-row">
-                    <span className="signal-name">{s.name}</span>
-                    <div className="signal-right">
-                      <span className="signal-val">{s.val}</span>
-                      <span className={`sig-tag ${s.cls}`}>{s.tag}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="conf-wrap">
-                <div className="conf-row">
-                  <span className="conf-lbl">Confidence</span>
-                  <span className="conf-pct">68%</span>
-                </div>
-                <div className="conf-bar">
-                  <div className="conf-fill" style={{ width: "68%" }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Agent Debate */}
-            <div className="rp-section">
-              <div className="rp-header">
-                <div className="rp-title">Agent Debate</div>
-                <span className="rp-phase">Phase 3</span>
-              </div>
-              <div className="agents-body">
-                {[
-                  { role:"Bull", cls:"bull", text:`Strong momentum in ${sym}. Earnings beat by 8% last quarter. Institutional accumulation visible in volume. Price target $195.` },
-                  { role:"Bear", cls:"bear", text:`P/E of 28× stretched vs sector median 22×. Insider selling spiked last month. Rate headwinds compress multiples.` },
-                  { role:"Neutral", cls:"neut", text:`Momentum supports Bulls short-term; valuation risk gives Bears a medium-term edge. Hold with tight stop.` },
-                ].map(a => (
-                  <div key={a.role} className={`agent-card ${a.cls}`}>
-                    <div className="agent-head">
-                      <div className="agent-bar" />
-                      <span className="agent-name">{a.role} Agent</span>
-                    </div>
-                    <div className="agent-body-text">{a.text}</div>
-                  </div>
-                ))}
-
-                <div className="coming-note">
-                  <div className="coming-note-title">Phase 3 — Streaming</div>
-                  <div className="coming-note-body">
-                    LangGraph agents will stream live via WebSocket, arguing in real time for any selected ticker.
-                  </div>
-                </div>
-              </div>
-            </div>
-
+            <SidebarMLSignals symbol={sym} />
+            <SidebarDebate symbol={sym} />
           </aside>
         </div>
 

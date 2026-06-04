@@ -246,59 +246,79 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
               {isConnected ? "Waiting for first tick…" : "Connecting to sentiment feed…"}
             </span>
             <span style={{ fontSize: 9, color: "var(--t4)" }}>
-              {isConnected ? "Refreshes every 8 seconds" : "ws://localhost:8000/ws/sentiment"}
+              {isConnected ? "Refreshes every 8 seconds" : (process.env.NEXT_PUBLIC_WS_URL ? `${process.env.NEXT_PUBLIC_WS_URL}/ws/sentiment` : "ws://localhost:8000/ws/sentiment")}
             </span>
           </div>
         )}
 
         {/* Tooltip */}
-        {tip && (
-          <div style={{
-            position: "absolute",
-            left: tip.x + 14, top: tip.y + 14,
-            background: "var(--s2)",
-            border: "1px solid var(--b2)",
-            borderRadius: 8, padding: "10px 13px",
-            minWidth: 220, maxWidth: 280,
-            pointerEvents: "none", zIndex: 10,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{
-                fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color: "var(--t0)",
-              }}>{tip.tick.symbol}</span>
-              <span style={{
-                fontSize: 8, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase",
-                padding: "2px 6px", borderRadius: 2, border: "1px solid",
-                background: tip.tick.score > 0.1 ? "var(--green-bg)" : tip.tick.score < -0.1 ? "var(--red-bg)" : "var(--amber-bg)",
-                borderColor: tip.tick.score > 0.1 ? "var(--green-bdr)" : tip.tick.score < -0.1 ? "var(--red-bdr)" : "var(--amber-bdr)",
-                color: tip.tick.score > 0.1 ? "var(--green)" : tip.tick.score < -0.1 ? "var(--red)" : "var(--amber)",
-              }}>
-                {tip.tick.label.replace("_", " ").toUpperCase()}
-              </span>
-            </div>
-
+        {tip && (() => {
+          const tooltipWidth = 250;
+          const tooltipHeight = 130;
+          const containerWidth = wrapRef.current?.clientWidth ?? 0;
+          const containerHeight = wrapRef.current?.clientHeight ?? 0;
+          
+          let left = tip.x + 14;
+          let top = tip.y + 14;
+          
+          if (left + tooltipWidth > containerWidth) {
+            left = tip.x - tooltipWidth - 14;
+          }
+          if (top + tooltipHeight > containerHeight) {
+            top = tip.y - tooltipHeight - 14;
+          }
+          
+          left = Math.max(8, left);
+          top = Math.max(8, top);
+          
+          return (
             <div style={{
-              fontSize: 9, color: "var(--t3)", fontStyle: "italic", lineHeight: 1.55,
-              marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--b0)",
+              position: "absolute",
+              left, top,
+              background: "var(--s2)",
+              border: "1px solid var(--b2)",
+              borderRadius: 8, padding: "10px 13px",
+              minWidth: 220, maxWidth: 280,
+              pointerEvents: "none", zIndex: 10,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
             }}>
-              &ldquo;{tip.tick.headline}&rdquo;
-            </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{
+                  fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color: "var(--t0)",
+                }}>{tip.tick.symbol}</span>
+                <span style={{
+                  fontSize: 8, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase",
+                  padding: "2px 6px", borderRadius: 2, border: "1px solid",
+                  background: tip.tick.score > 0.1 ? "var(--green-bg)" : tip.tick.score < -0.1 ? "var(--red-bg)" : "var(--amber-bg)",
+                  borderColor: tip.tick.score > 0.1 ? "var(--green-bdr)" : tip.tick.score < -0.1 ? "var(--red-bdr)" : "var(--amber-bdr)",
+                  color: tip.tick.score > 0.1 ? "var(--green)" : tip.tick.score < -0.1 ? "var(--red)" : "var(--amber)",
+                }}>
+                  {tip.tick.label.replace("_", " ").toUpperCase()}
+                </span>
+              </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 12px" }}>
-              {[
-                { k: "Score",     v: fmt2(tip.tick.score) },
-                { k: "Mkt Cap",   v: `$${tip.tick.market_cap}B` },
-                { k: "News Items",v: String(tip.tick.news_count) },
-              ].map(({ k, v }) => (
-                <div key={k}>
-                  <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--t4)", marginBottom: 2 }}>{k}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: "var(--t1)" }}>{v}</div>
-                </div>
-              ))}
+              <div style={{
+                fontSize: 9, color: "var(--t3)", fontStyle: "italic", lineHeight: 1.55,
+                marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--b0)",
+              }}>
+                &ldquo;{tip.tick.headline}&rdquo;
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 12px" }}>
+                {[
+                  { k: "Score",     v: fmt2(tip.tick.score) },
+                  { k: "Mkt Cap",   v: `$${tip.tick.market_cap}B` },
+                  { k: "News Items",v: String(tip.tick.news_count) },
+                ].map(({ k, v }) => (
+                  <div key={k}>
+                    <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--t4)", marginBottom: 2 }}>{k}</div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: "var(--t1)" }}>{v}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* ── Legend ────────────────────────────────────────────────── */}

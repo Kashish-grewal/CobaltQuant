@@ -91,10 +91,10 @@ export default function DebatePanel({ ticker }: Props) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
-            fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color: "var(--t0)",
+            fontFamily: "var(--mono)", fontSize: 14, fontWeight: 700, color: "var(--t0)",
           }}>{ticker}</span>
           <span style={{
-            fontSize: 8, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase",
+            fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase",
             padding: "2px 6px", borderRadius: 2,
             background: "var(--blue-bg,rgba(79,142,247,0.08))",
             border: "1px solid rgba(79,142,247,0.2)",
@@ -110,13 +110,13 @@ export default function DebatePanel({ ticker }: Props) {
                 width: 6, height: 6, borderRadius: "50%", background: "var(--green)",
                 animation: "pulse 1.2s ease-in-out infinite",
               }} />
-              <span style={{ fontSize: 9, color: "var(--green)", fontWeight: 700, letterSpacing: ".08em" }}>
+              <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700, letterSpacing: ".08em" }}>
                 STREAMING
               </span>
             </div>
           )}
           {isDone && (
-            <span style={{ fontSize: 9, color: "var(--t3)", letterSpacing: ".08em" }}>
+            <span style={{ fontSize: 11, color: "var(--t3)", letterSpacing: ".08em" }}>
               COMPLETE · {activeTicker}
             </span>
           )}
@@ -130,7 +130,7 @@ export default function DebatePanel({ ticker }: Props) {
                 padding: "5px 14px",
                 background: "var(--blue,#4F8EF7)",
                 border: "none", borderRadius: 4,
-                fontFamily: "var(--mono)", fontSize: 10, fontWeight: 700,
+                fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700,
                 letterSpacing: ".06em", color: "#fff", cursor: "pointer",
                 transition: "opacity 0.15s",
               }}
@@ -147,7 +147,7 @@ export default function DebatePanel({ ticker }: Props) {
                 padding: "5px 14px",
                 background: "transparent",
                 border: "1px solid var(--b2)", borderRadius: 4,
-                fontFamily: "var(--mono)", fontSize: 10, fontWeight: 700,
+                fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700,
                 letterSpacing: ".06em", color: "var(--t3)", cursor: "pointer",
               }}
             >
@@ -181,11 +181,11 @@ export default function DebatePanel({ ticker }: Props) {
                     background: role.bar, flexShrink: 0,
                   }} />
                   <span style={{
-                    fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, color: "var(--t0)",
+                    fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color: "var(--t0)",
                     letterSpacing: ".04em",
                   }}>{role.label}</span>
                   <span style={{
-                    fontSize: 7, fontWeight: 800, letterSpacing: ".12em",
+                    fontSize: 10, fontWeight: 800, letterSpacing: ".12em",
                     padding: "1px 5px", borderRadius: 2,
                     background: role.bg, border: `1px solid ${role.border}`,
                     color: role.color, marginLeft: "auto",
@@ -212,7 +212,7 @@ export default function DebatePanel({ ticker }: Props) {
                 style={{
                   flex: 1, overflowY: "auto", padding: "14px 16px",
                   fontFamily: "var(--sans,'Inter',sans-serif)",
-                  fontSize: 12, lineHeight: 1.72, color: "var(--t1)",
+                  fontSize: 13, lineHeight: 1.72, color: "var(--t1)",
                   letterSpacing: ".01em",
                 }}
               >
@@ -231,10 +231,10 @@ export default function DebatePanel({ ticker }: Props) {
                         background: role.bar, opacity: 0.4,
                       }} />
                     </div>
-                    <span style={{ fontSize: 9, color: "var(--t4)", letterSpacing: ".08em" }}>
+                    <span style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".08em" }}>
                       {role.label.toUpperCase()}
                     </span>
-                    <span style={{ fontSize: 8, color: "var(--t4)" }}>
+                    <span style={{ fontSize: 10, color: "var(--t4)" }}>
                       Press Run Debate to start
                     </span>
                   </div>
@@ -248,7 +248,7 @@ export default function DebatePanel({ ticker }: Props) {
                       borderTopColor: "transparent",
                       animation: "spin 0.7s linear infinite",
                     }} />
-                    <span style={{ fontSize: 9 }}>Thinking…</span>
+                    <span style={{ fontSize: 11 }}>Thinking…</span>
                   </div>
                 )}
 
@@ -264,17 +264,33 @@ export default function DebatePanel({ ticker }: Props) {
         })}
       </div>
 
+      {/* ── Disclaimer Banner ─────────────────────────────────────── */}
+      <div style={{
+        padding: "8px 20px",
+        background: "rgba(245,158,11,0.03)",
+        borderTop: "1px solid var(--b0)",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 12, color: "var(--amber)", lineHeight: 1 }}>⚠️</span>
+        <span style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.4 }}>
+          <strong>Notice:</strong> Agent opinions, price targets (e.g. $230), and buy/sell recommendations are generated by LLM models for comparative analysis and debate purposes. They are arguments to weigh, not verified predictions or financial advice.
+        </span>
+      </div>
+
       {/* ── Footer ──────────────────────────────────────────────── */}
       <div style={{
         padding: "5px 20px", background: "var(--s1)",
         borderTop: "1px solid var(--b0)", flexShrink: 0,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <span style={{ fontSize: 8, color: "var(--t4)", letterSpacing: ".04em" }}>
+        <span style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".04em" }}>
           Phase 3 · Mock streaming — plug in LangGraph + Claude to go live
         </span>
-        <span style={{ fontSize: 8, color: "var(--t4)" }}>
-          ws://localhost:8000/ws/debate
+        <span style={{ fontSize: 11, color: "var(--t4)" }}>
+          {process.env.NEXT_PUBLIC_WS_URL ? `${process.env.NEXT_PUBLIC_WS_URL}/ws/debate` : "ws://localhost:8000/ws/debate"}
         </span>
       </div>
 

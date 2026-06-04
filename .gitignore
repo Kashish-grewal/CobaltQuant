@@ -33,3 +33,7 @@ Thumbs.db
 # Ignored files
 README.md
 *.tsbuildinfo
+
+# Model directories
+models/
+server/models/

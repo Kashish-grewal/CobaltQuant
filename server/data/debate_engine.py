@@ -10,8 +10,13 @@ To swap in a real LLM (Claude, GPT-4, Gemini):
 """
 
 import asyncio
+import json
+import logging
 import random
+import httpx
 from typing import AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 # ── Per-ticker argument templates ──────────────────────────────────────────────
 # Each role has 2 variants so repeat debates feel slightly different.
@@ -85,46 +90,104 @@ def _get_argument(ticker: str, role: str) -> str:
     return random.choice(variants)
 
 
+async def _stream_openai(role: str, ticker: str, api_key: str, ws_send) -> bool:
+    """Stream debate arguments from OpenAI via raw HTTP SSE."""
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    role_prompts = {
+        "bull": f"You are a professional bullish stock analyst. Write a concise, compelling 3-4 sentence bullish investment thesis (LONG case) for {ticker}. Focus on high-impact quantitative facts, gross margins, growth rate catalysts, and market share. Keep it realistic, professional, and dense. Do not use markdown tags, formatting, or bullet points.",
+        "bear": f"You are a professional bearish stock analyst. Write a concise, compelling 3-4 sentence bearish investment thesis (SHORT case) for {ticker}. Focus on high-impact quantitative risks, multiple compression, headwinds, antitrust litigation, or valuation bubbles. Keep it realistic, professional, and dense. Do not use markdown tags, formatting, or bullet points.",
+        "neutral": f"You are a professional neutral market analyst. Write a concise, compelling 3-4 sentence neutral assessment (HOLD case) for {ticker}. Detail the conflicting catalysts between the bull and bear arguments, technical support/resistance ranges, or wait-and-see indicators. Keep it realistic, professional, and dense. Do not use markdown tags, formatting, or bullet points."
+    }
+
+    body = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "user", "content": role_prompts[role]}
+        ],
+        "stream": True,
+        "temperature": 0.7,
+        "max_tokens": 180,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", url, headers=headers, json=body, timeout=10.0) as resp:
+                if resp.status_code != 200:
+                    logger.warning(f"OpenAI returned status {resp.status_code} for {role}")
+                    return False
+
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk_data = json.loads(data_str)
+                            delta = chunk_data["choices"][0]["delta"]
+                            content = delta.get("content", "")
+                            if content:
+                                await ws_send({
+                                    "type": "debate_chunk",
+                                    "agent": role,
+                                    "chunk": content,
+                                })
+                        except Exception:
+                            pass
+        return True
+    except Exception as e:
+        logger.warning(f"Error streaming from OpenAI for {role}: {e}")
+        return False
+
+
 async def stream_debate(
     ticker: str,
     ws_send,                  # callable: async (dict) -> None
     word_delay: float = 0.045,
 ) -> None:
     """
-    Stream all three agent arguments concurrently, word by word.
-    Each word is sent as a separate WebSocket message.
-
-    Protocol:
-      → {"type": "debate_start", "ticker": "AAPL"}
-      → {"type": "debate_chunk", "agent": "bull",    "chunk": "Strong"}
-      → {"type": "debate_chunk", "agent": "bear",    "chunk": "P/E"}
-      ... (interleaved)
-      → {"type": "debate_done",  "ticker": "AAPL"}
-
-    To plug in a real LLM, replace `_word_stream()` with a streaming API call.
+    Stream all three agent arguments concurrently.
+    Each chunk is sent as a separate WebSocket message.
     """
-
     await ws_send({"type": "debate_start", "ticker": ticker})
 
-    async def _word_stream(role: str, jitter: float):
-        """Stream one agent's argument word by word."""
-        text = _get_argument(ticker, role)
-        words = text.split()
+    from config import get_settings
+    settings = get_settings()
+    api_key = settings.openai_api_key
+
+    use_live = api_key and api_key != "your_openai_key_here"
+
+    async def _run_agent(role: str, jitter: float):
         await asyncio.sleep(jitter)  # stagger agent starts slightly
-        for word in words:
-            await ws_send({
-                "type":  "debate_chunk",
-                "agent": role,
-                "chunk": word + " ",
-            })
-            # Slight randomness makes it feel like real LLM streaming
-            await asyncio.sleep(word_delay + random.uniform(-0.01, 0.02))
+        success = False
+        if use_live:
+            success = await _stream_openai(role, ticker, api_key, ws_send)
+
+        if not success:
+            # Fallback to simulated word-by-word streaming
+            text = _get_argument(ticker, role)
+            words = text.split()
+            for word in words:
+                await ws_send({
+                    "type":  "debate_chunk",
+                    "agent": role,
+                    "chunk": word + " ",
+                })
+                # Slight randomness makes it feel like real LLM streaming
+                await asyncio.sleep(word_delay + random.uniform(-0.01, 0.02))
 
     # Run all three agents concurrently (simulates parallel LLM calls)
     await asyncio.gather(
-        _word_stream("bull",    jitter=0.0),
-        _word_stream("bear",    jitter=0.2),
-        _word_stream("neutral", jitter=0.4),
+        _run_agent("bull",    jitter=0.0),
+        _run_agent("bear",    jitter=0.25),
+        _run_agent("neutral", jitter=0.5),
     )
 
     await ws_send({"type": "debate_done", "ticker": ticker})
