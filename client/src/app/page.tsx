@@ -202,7 +202,7 @@ export default function Dashboard() {
           </div>
           <span className="brand-wordmark">Cobalt<em>Quant</em></span>
           <div className="divider" />
-          <span className="brand-tag">Kashish's Terminal</span>
+          <span className="brand-tag">Kashish&apos;s Terminal</span>
         </div>
 
         {/* Nav */}
