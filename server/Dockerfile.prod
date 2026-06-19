@@ -12,7 +12,7 @@ COPY server/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy ALL application source code
-COPY server/main.py server/ws_manager.py server/config.py server/app_state.py server/db.py server/persistence.py server/auth.py ./
+COPY server/*.py ./
 COPY server/data/ ./data/
 COPY server/routes/ ./routes/
 
