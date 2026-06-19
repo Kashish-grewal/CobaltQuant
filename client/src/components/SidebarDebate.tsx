@@ -31,7 +31,7 @@ function Cursor() {
 }
 
 export default function SidebarDebate({ symbol }: Props) {
-  const { agentText, status, activeTicker, startDebate, reset } = useDebate();
+  const { agentText, status, activeTicker, isOffline, startDebate, reset } = useDebate();
   
   const scrollRefs = {
     bull: useRef<HTMLDivElement>(null),
@@ -39,10 +39,16 @@ export default function SidebarDebate({ symbol }: Props) {
     neutral: useRef<HTMLDivElement>(null),
   };
 
-  // Auto-run debate when symbol changes
+  // Auto-run debate when symbol changes (debounced to avoid wasting API credits)
   useEffect(() => {
     if (symbol) {
-      startDebate(symbol);
+      const timer = setTimeout(() => {
+        startDebate(symbol);
+      }, 600);
+      return () => {
+        clearTimeout(timer);
+        reset();
+      };
     }
     return () => {
       reset();
@@ -118,6 +124,22 @@ export default function SidebarDebate({ symbol }: Props) {
           )}
         </div>
       </div>
+
+      {/* Offline notice */}
+      {isOffline && (
+        <div style={{
+          padding: "6px 14px",
+          background: "rgba(255,176,32,0.06)",
+          borderBottom: "1px solid rgba(255,176,32,0.15)",
+          fontSize: "10px",
+          color: "var(--amber)",
+          fontFamily: "var(--mono)",
+          letterSpacing: ".03em",
+          flexShrink: 0,
+        }}>
+          ⚡ Offline mode — cached analysis (check API keys or rate limits)
+        </div>
+      )}
 
       {/* Agents cards container */}
       <div className="agents-body" style={{ flex: 1, overflowY: "auto" }}>

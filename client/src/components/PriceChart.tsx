@@ -41,35 +41,35 @@ export default function PriceChart({ symbol, currentPrice }: Props) {
     const chart = createChart(containerRef.current, {
       layout: {
         background:  { type: ColorType.Solid, color: "transparent" },
-        textColor:   "#4A5568",
+        textColor:   "#757885",
         fontFamily:  "'JetBrains Mono', monospace",
         fontSize:    10,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.03)", style: LineStyle.Solid },
-        horzLines: { color: "rgba(255,255,255,0.03)", style: LineStyle.Solid },
+        vertLines: { color: "rgba(255,255,255,0.015)", style: LineStyle.Solid },
+        horzLines: { color: "rgba(255,255,255,0.015)", style: LineStyle.Solid },
       },
       crosshair: {
         vertLine: {
-          color: "rgba(79,142,247,0.5)",
+          color: "rgba(255,96,0,0.3)",
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#141920",
+          labelBackgroundColor: "#111216",
         },
         horzLine: {
-          color: "rgba(79,142,247,0.5)",
+          color: "rgba(255,96,0,0.3)",
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#141920",
+          labelBackgroundColor: "#111216",
         },
       },
       rightPriceScale: {
-        borderColor: "rgba(255,255,255,0.05)",
+        borderColor: "#21232c",
         scaleMargins: { top: 0.1, bottom: 0.08 },
-        textColor: "#4A5568",
+        textColor: "#757885",
       },
       timeScale: {
-        borderColor: "rgba(255,255,255,0.05)",
+        borderColor: "#21232c",
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: (time: number) => {
@@ -85,19 +85,19 @@ export default function PriceChart({ symbol, currentPrice }: Props) {
 
     // Cobalt blue area — same brand colour as the rest of the UI
     const series = chart.addAreaSeries({
-      lineColor:   "#4F8EF7",
-      topColor:    "rgba(79,142,247,0.14)",
-      bottomColor: "rgba(79,142,247,0.00)",
+      lineColor:   "#ff6000",
+      topColor:    "rgba(255,96,0,0.12)",
+      bottomColor: "rgba(255,96,0,0.00)",
       lineWidth:   2,
       priceLineVisible:          true,
-      priceLineColor:            "rgba(79,142,247,0.35)",
+      priceLineColor:            "rgba(255,96,0,0.3)",
       priceLineWidth:            1,
       lastValueVisible:          true,
       crosshairMarkerVisible:    true,
       crosshairMarkerRadius:     4,
-      crosshairMarkerBorderColor:"#4F8EF7",
+      crosshairMarkerBorderColor:"#ff6000",
       crosshairMarkerBorderWidth: 2,
-      crosshairMarkerBackgroundColor: "#0B0D14",
+      crosshairMarkerBackgroundColor: "#0c0d0f",
     });
 
     chartRef.current  = chart;

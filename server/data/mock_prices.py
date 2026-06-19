@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
+from data.assets import ASSET_META
+
 
 @dataclass
 class Asset:
@@ -82,30 +84,26 @@ class Asset:
 
 
 # ── Asset Universe ─────────────────────────────────────────────────────────────
-# Covers all major sectors so the heatmap looks rich and varied
+# Built from the shared ASSET_META — prices come from approx_price field.
+# Per-asset GBM parameters tuned by sector volatility profile.
+_SIGMA_BY_SECTOR: dict[str, float] = {
+    "Technology": 0.0025,
+    "Finance":    0.0015,
+    "Healthcare": 0.0015,
+    "Energy":     0.0021,
+    "Consumer":   0.0025,
+    "Crypto":     0.0060,
+}
+
 ASSETS = [
-    # Tech
-    Asset("AAPL",  "Apple",          182.50, "Technology",  sigma=0.0018),
-    Asset("MSFT",  "Microsoft",      415.20, "Technology",  sigma=0.0016),
-    Asset("NVDA",  "NVIDIA",         875.40, "Technology",  sigma=0.0035, mu=0.0003),
-    Asset("GOOGL", "Alphabet",       175.80, "Technology",  sigma=0.0020),
-    Asset("META",  "Meta",           490.30, "Technology",  sigma=0.0025),
-    Asset("AMD",   "AMD",            168.40, "Technology",  sigma=0.0032),
-    # Finance
-    Asset("JPM",   "JPMorgan",       195.60, "Finance",     sigma=0.0015),
-    Asset("GS",    "Goldman Sachs",  445.80, "Finance",     sigma=0.0018),
-    Asset("V",     "Visa",           270.20, "Finance",     sigma=0.0012),
-    # Healthcare
-    Asset("JNJ",   "J&J",           147.30, "Healthcare",  sigma=0.0010),
-    Asset("PFE",   "Pfizer",         27.80,  "Healthcare",  sigma=0.0020),
-    # Energy
-    Asset("XOM",   "Exxon",          118.40, "Energy",      sigma=0.0022),
-    Asset("CVX",   "Chevron",        152.60, "Energy",      sigma=0.0020),
-    # Consumer
-    Asset("AMZN",  "Amazon",         185.20, "Consumer",    sigma=0.0022),
-    Asset("TSLA",  "Tesla",          175.50, "Consumer",    sigma=0.0045, mu=-0.0001),
-    # Crypto ETFs
-    Asset("IBIT",  "iShares Bitcoin ETF", 38.40, "Crypto",  sigma=0.0060, mu=0.0002),
+    Asset(
+        symbol=sym,
+        name=meta["name"],
+        price=meta["approx_price"],
+        sector=meta["sector"],
+        sigma=_SIGMA_BY_SECTOR.get(meta["sector"], 0.002),
+    )
+    for sym, meta in ASSET_META.items()
 ]
 
 

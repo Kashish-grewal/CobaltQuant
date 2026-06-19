@@ -31,67 +31,43 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Callable, Awaitable
 
 import websockets
 from websockets.exceptions import ConnectionClosed
 
 from config import get_settings
+from data.assets import ASSET_META, SYMBOLS
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ── Asset metadata (name + sector) ────────────────────────────────────────────
-# We keep this locally because Alpaca only sends price/volume, not metadata
-ASSET_META: dict[str, dict] = {
-    "AAPL":  {"name": "Apple",               "sector": "Technology"},
-    "MSFT":  {"name": "Microsoft",           "sector": "Technology"},
-    "NVDA":  {"name": "NVIDIA",              "sector": "Technology"},
-    "GOOGL": {"name": "Alphabet",            "sector": "Technology"},
-    "META":  {"name": "Meta",                "sector": "Technology"},
-    "AMD":   {"name": "AMD",                 "sector": "Technology"},
-    "JPM":   {"name": "JPMorgan",            "sector": "Finance"},
-    "GS":    {"name": "Goldman Sachs",       "sector": "Finance"},
-    "V":     {"name": "Visa",                "sector": "Finance"},
-    "JNJ":   {"name": "J&J",                 "sector": "Healthcare"},
-    "PFE":   {"name": "Pfizer",              "sector": "Healthcare"},
-    "XOM":   {"name": "Exxon",               "sector": "Energy"},
-    "CVX":   {"name": "Chevron",             "sector": "Energy"},
-    "AMZN":  {"name": "Amazon",              "sector": "Consumer"},
-    "TSLA":  {"name": "Tesla",               "sector": "Consumer"},
-    "IBIT":  {"name": "iShares Bitcoin ETF", "sector": "Crypto"},
-}
-
-SYMBOLS = list(ASSET_META.keys())
 ALPACA_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"
+
+# US Eastern timezone — handles EDT/EST automatically
+_ET = ZoneInfo("America/New_York")
 
 
 def is_market_open() -> bool:
     """
     Check if US stock market is currently open.
     Market hours: Monday–Friday, 9:30 AM – 4:00 PM US Eastern Time.
-    
-    We use UTC offsets:
-      EST = UTC-5 (Nov–Mar)
-      EDT = UTC-4 (Mar–Nov, daylight saving)
-    
-    This is a simple heuristic — for production use the Alpaca /clock endpoint.
+
+    Uses zoneinfo.ZoneInfo which correctly handles EDT ↔ EST transitions
+    (daylight saving), unlike hardcoded UTC offsets.
+
+    For a production system: use the Alpaca /clock endpoint for holiday awareness.
     """
-    now_utc = datetime.now(timezone.utc)
-    
+    now_et = datetime.now(_ET)
+
     # Skip weekends
-    if now_utc.weekday() >= 5:  # 5=Saturday, 6=Sunday
+    if now_et.weekday() >= 5:  # 5=Saturday, 6=Sunday
         return False
-    
-    # Approximate EDT (UTC-4, ~March–November)
-    # For a production system: use pytz or the Alpaca /clock endpoint
-    hour_et = (now_utc.hour - 4) % 24  # EDT offset
-    minute = now_utc.minute
-    
-    # 9:30 AM = 9*60+30 = 570 minutes
-    # 4:00 PM = 16*60  = 960 minutes
-    minutes_et = hour_et * 60 + minute
+
+    # 9:30 AM = 9*60+30 = 570 minutes, 4:00 PM = 16*60 = 960 minutes
+    minutes_et = now_et.hour * 60 + now_et.minute
     return 570 <= minutes_et < 960
 
 
@@ -108,6 +84,7 @@ class AlpacaLiveClient:
     def __init__(self, on_tick: Callable[[list[dict]], Awaitable[None]]):
         self.on_tick = on_tick
         self._running = False
+        self._source_label = "alpaca_live"
         
         # In-memory price state — tracks the latest tick per symbol
         # Initialized to None; will populate once first trade arrives
@@ -231,8 +208,35 @@ class AlpacaLiveClient:
 
         while self._running:
             if not is_market_open():
-                logger.info("🕐 Market closed — Alpaca stream paused. Will retry in 5 minutes.")
-                await asyncio.sleep(300)  # check every 5 minutes
+                logger.info("🕐 Market closed — Alpaca stream running in mock fallback mode.")
+                self._source_label = "mock"
+                from data.mock_prices import ASSETS
+                
+                # Seed state with mock prices if empty
+                for asset in ASSETS:
+                    sym = asset.symbol
+                    if self._state[sym]["price"] == 0.0:
+                        self._state[sym]["price"] = asset.price
+                        self._state[sym]["open"] = asset.price
+                        self._state[sym]["high"] = asset.price
+                        self._state[sym]["low"] = asset.price
+
+                tick_count = 0
+                while self._running and not is_market_open():
+                    ticks = []
+                    for asset in ASSETS:
+                        tick = asset.tick()
+                        self._state[asset.symbol] = tick
+                        ticks.append(tick)
+                    await self.on_tick(ticks)
+                    await asyncio.sleep(1.0)
+                    
+                    tick_count += 1
+                    if tick_count >= 10:
+                        tick_count = 0
+
+                if self._running:
+                    self._source_label = "alpaca_live"
                 continue
 
             try:

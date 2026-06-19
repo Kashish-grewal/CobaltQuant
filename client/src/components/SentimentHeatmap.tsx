@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import * as d3 from "d3";
 import { SentimentTick, SentimentMap } from "@/hooks/useSentiment";
 
@@ -20,12 +20,12 @@ interface TooltipState {
 const colorScale = d3.scaleLinear<string>()
   .domain([-1, -0.4, -0.1, 0.1, 0.4, 1])
   .range([
-    "#EF5350",   // strong bear
-    "#B71C1C",   // bear
-    "#1E2733",   // slightly bear (near neutral dark)
-    "#1A3A38",   // slightly bull
-    "#1B6B5E",   // bull
-    "#26A69A",   // strong bull
+    "#FF4D6D",   // strong bear — electric red
+    "#C0253C",   // bear
+    "#131828",   // slightly bear (near neutral dark)
+    "#0D2820",   // slightly bull
+    "#096B4E",   // bull
+    "#00C896",   // strong bull — electric teal
   ])
   .clamp(true);
 
@@ -39,10 +39,12 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
   const wrapRef      = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<TooltipState | null>(null);
 
-  useEffect(() => {
-    let raf: number;
-    raf = requestAnimationFrame(() => {
-    const ticks = Object.values(data);
+  // ── Stable redraw: runs on data change AND resize ──────────────────
+  const dataRef = useRef<SentimentMap>(data);
+  dataRef.current = data; // always fresh without being a dep
+
+  const redraw = useCallback(() => {
+    const ticks = Object.values(dataRef.current);
     if (!ticks.length || !svgRef.current || !wrapRef.current) return;
 
     const W = wrapRef.current.clientWidth;
@@ -52,23 +54,16 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
     const svg = d3.select(svgRef.current);
     svg.attr("width", W).attr("height", H);
 
-    // ── D3 Treemap layout ────────────────────────────────────────────
     const root = d3.hierarchy({ children: ticks })
       .sum((d: any) => Math.max(d.market_cap ?? 1, 1))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
-    d3.treemap<any>()
-      .size([W, H])
-      .padding(2)
-      .round(true)(root);
-
+    d3.treemap<any>().size([W, H]).padding(2).round(true)(root);
     const leaves = root.leaves();
 
-    // ── Bind cells ───────────────────────────────────────────────────
     const cells = svg.selectAll<SVGGElement, d3.HierarchyRectangularNode<any>>("g.cell")
       .data(leaves, (d: any) => d.data.symbol);
 
-    // Enter
     const entering = cells.enter().append("g").attr("class", "cell");
     entering.append("rect");
     entering.append("text").attr("class", "sym");
@@ -77,27 +72,23 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
 
     const merged = entering.merge(cells as any);
 
-    // Update positions (smooth transition)
-    merged.transition().duration(600).ease(d3.easeCubicInOut)
+    merged.transition().duration(500).ease(d3.easeCubicInOut)
       .attr("transform", (d: any) => `translate(${d.x0},${d.y0})`);
 
     merged.select("rect")
-      .transition().duration(600).ease(d3.easeCubicInOut)
+      .transition().duration(500).ease(d3.easeCubicInOut)
       .attr("width",  (d: any) => Math.max(0, d.x1 - d.x0))
       .attr("height", (d: any) => Math.max(0, d.y1 - d.y0))
       .attr("rx", 4).attr("ry", 4)
       .attr("fill",   (d: any) => colorScale(d.data.score));
 
-    // Text visibility based on cell size
     merged.each(function(d: any) {
       const w   = d.x1 - d.x0;
       const h   = d.y1 - d.y0;
       const col = textColor(d.data.score);
       const mid = { x: w / 2, y: h / 2 };
+      const g   = d3.select(this);
 
-      const g = d3.select(this);
-
-      // Symbol (always shown if cell big enough)
       g.select("text.sym")
         .attr("x", mid.x).attr("y", h >= 60 ? mid.y - 10 : mid.y - 2)
         .attr("text-anchor", "middle")
@@ -109,7 +100,6 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
         .attr("opacity", w >= 40 ? 1 : 0)
         .text(d.data.symbol);
 
-      // Score
       g.select("text.score")
         .attr("x", mid.x).attr("y", h >= 60 ? mid.y + 6 : mid.y + 10)
         .attr("text-anchor", "middle")
@@ -121,7 +111,6 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
         .attr("opacity", w >= 60 && h >= 55 ? 0.8 : 0)
         .text(fmt2(d.data.score));
 
-      // Label (only for large cells)
       g.select("text.label")
         .attr("x", mid.x).attr("y", h >= 80 ? mid.y + 22 : 0)
         .attr("text-anchor", "middle")
@@ -134,7 +123,6 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
         .text(d.data.label.replace("_", " ").toUpperCase());
     });
 
-    // Hover interaction
     merged
       .style("cursor", "pointer")
       .on("mouseenter", function(event: MouseEvent, d: any) {
@@ -142,11 +130,7 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
           .attr("stroke", "rgba(255,255,255,0.25)")
           .attr("stroke-width", 1.5);
         const rect = wrapRef.current!.getBoundingClientRect();
-        setTip({
-          x: event.clientX - rect.left,
-          y: event.clientY - rect.top,
-          tick: d.data,
-        });
+        setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, tick: d.data });
       })
       .on("mousemove", function(event: MouseEvent) {
         const rect = wrapRef.current!.getBoundingClientRect();
@@ -157,26 +141,22 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
         setTip(null);
       });
 
-    // Exit
     cells.exit().remove();
-    }); // end RAF
+  }, []); // stable: reads data via ref, not dep
+
+  // Re-draw when data changes (via RAF to batch with browser paint)
+  useEffect(() => {
+    const raf = requestAnimationFrame(redraw);
     return () => cancelAnimationFrame(raf);
+  }, [data, redraw]);
 
-  }, [data]);
-
-  // Resize observer
+  // Re-draw on resize — now correctly re-runs full treemap layout
   useEffect(() => {
     if (!wrapRef.current) return;
-    const ro = new ResizeObserver(() => {
-      // Re-trigger the layout effect by forcing a paint
-      if (svgRef.current) {
-        svgRef.current.setAttribute("width",  String(wrapRef.current?.clientWidth  ?? 0));
-        svgRef.current.setAttribute("height", String(wrapRef.current?.clientHeight ?? 0));
-      }
-    });
+    const ro = new ResizeObserver(() => requestAnimationFrame(redraw));
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [redraw]);
 
   const ticks = Object.values(data);
   const bullish  = ticks.filter(t => t.score > 0.1).length;
@@ -330,11 +310,11 @@ export default function SentimentHeatmap({ data, isConnected }: Props) {
         <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--t4)" }}>Sentiment</span>
         <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
           {[
-            { color: "#EF5350", label: "Strong Bear" },
-            { color: "#B71C1C", label: "Bear" },
-            { color: "#1E2733", label: "Neutral" },
-            { color: "#1B6B5E", label: "Bull" },
-            { color: "#26A69A", label: "Strong Bull" },
+            { color: "#FF4D6D", label: "Strong Bear" },
+            { color: "#C0253C", label: "Bear" },
+            { color: "#1E2533", label: "Neutral" },
+            { color: "#096B4E", label: "Bull" },
+            { color: "#00C896", label: "Strong Bull" },
           ].map(({ color, label }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <div style={{ width: 24, height: 8, background: color, borderRadius: 2 }} />

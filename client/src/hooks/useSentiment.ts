@@ -52,9 +52,23 @@ export function useSentiment(): UseSentimentReturn {
         if (msg.type !== "sentiment_update") return;
         const ticks: SentimentTick[] = msg.data;
         setData(prev => {
+          // Shallow-compare: only update keys that actually changed
+          let changed = false;
           const next = { ...prev };
-          ticks.forEach(t => { next[t.symbol] = t; });
-          return next;
+          ticks.forEach(t => {
+            const existing = prev[t.symbol];
+            // Compare key fields — avoids re-render if server pushes identical data
+            if (
+              !existing ||
+              existing.score !== t.score ||
+              existing.label !== t.label ||
+              existing.news_count !== t.news_count
+            ) {
+              next[t.symbol] = t;
+              changed = true;
+            }
+          });
+          return changed ? next : prev; // Return same reference if nothing changed
         });
         setLastUpdate(msg.timestamp ?? Date.now());
       } catch { /* ignore malformed */ }

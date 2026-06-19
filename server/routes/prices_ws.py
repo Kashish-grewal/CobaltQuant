@@ -29,7 +29,16 @@ async def prices_websocket(websocket: WebSocket):
     """
     Accept a WebSocket, send initial snapshot, then keep alive.
     All price updates are pushed via manager.broadcast() from the background task.
+
+    Authentication: pass ?token=xxx query parameter.
+    In dev mode (no JWT_SECRET set), all connections are accepted.
     """
+    # Auth check — closes connection with 4001/4003 if token is invalid in production
+    from auth import verify_ws_token
+    auth_result = await verify_ws_token(websocket)
+    if auth_result is None and settings.jwt_secret:
+        return  # Connection was closed by verify_ws_token
+
     await manager.connect(websocket, channel="prices")
 
     try:
@@ -72,12 +81,14 @@ async def _send_snapshot(websocket: WebSocket):
             "timestamp": int(time.time() * 1000),
         })
     else:
-        # Server just started, first fetch not done yet
-        # Send mock so UI has something to show (~2s until first real data arrives)
+        # Server just started, first yfinance/alpaca fetch not done yet.
+        # Send mock seed prices so UI isn't blank (~2s until first real data).
+        # The "loading" flag tells the frontend to show a "Loading real data..." indicator.
         from data.mock_prices import ASSETS
         await manager.send_to_one(websocket, {
             "type": "initial_snapshot",
             "source": "mock_fallback",
+            "loading": True,
             "data": [a.tick() for a in ASSETS],
             "timestamp": int(time.time() * 1000),
         })

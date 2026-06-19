@@ -30,10 +30,19 @@ Thumbs.db
 .vscode/settings.json
 *.swp
 
-# Ignored files
-README.md
+# Build artifacts
 *.tsbuildinfo
 
-# Model directories
+# Model directories (regenerated at runtime)
 models/
 server/models/
+
+# Database (regenerated at runtime)
+*.db
+server/*.db
+
+# SSL certs (production secrets)
+nginx/ssl/
+
+# Scratch / temp files
+Untitled-*

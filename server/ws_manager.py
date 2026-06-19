@@ -7,12 +7,23 @@ KEY FIXES in this version:
   1. Dead connection auto-eviction during broadcast
   2. send_to_one returns bool so callers can exit cleanly
   3. Defensive copy of channel set before iteration (avoids mutation-during-iteration bugs)
+  4. orjson for 5-10× faster JSON serialization (with stdlib fallback)
 """
 import asyncio
-import json
 import logging
 from collections import defaultdict
 from fastapi import WebSocket
+
+# Use orjson for fast serialization (5-10× faster than stdlib json).
+# Falls back to stdlib json if orjson isn't installed.
+try:
+    import orjson
+    def _dumps(obj: dict) -> str:
+        return orjson.dumps(obj).decode("utf-8")
+except ImportError:
+    import json
+    def _dumps(obj: dict) -> str:
+        return json.dumps(obj)
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +49,13 @@ class ConnectionManager:
         """
         Send to ALL clients in a channel concurrently.
         Dead connections are automatically removed after each broadcast.
+        Serializes once, sends the same string to all clients.
         """
         clients = set(self._channels[channel])  # snapshot — safe to mutate original
         if not clients:
             return
 
-        payload = json.dumps(message)
+        payload = _dumps(message)
         dead: set[WebSocket] = set()
 
         async def _send(ws: WebSocket):
@@ -60,17 +72,18 @@ class ConnectionManager:
         if dead:
             logger.debug(f"Evicted {len(dead)} dead connection(s) from '{channel}'")
 
-    async def send_to_one(self, websocket: WebSocket, message: dict) -> bool:
+    async def send_to_one(self, websocket: WebSocket, message: dict, *, channel: str = "prices") -> bool:
         """
         Send to a single client. Returns False if connection is already dead.
         Callers should break their loop when False is returned.
         """
         try:
-            await websocket.send_text(json.dumps(message))
+            await websocket.send_text(_dumps(message))
             return True
         except Exception:
-            self._channels["prices"].discard(websocket)  # evict immediately
+            self._channels[channel].discard(websocket)  # evict immediately
             return False
 
 
 manager = ConnectionManager()
+

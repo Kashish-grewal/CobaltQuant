@@ -1,389 +1,185 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import dynamic from "next/dynamic";
-import { useMarketData } from "@/hooks/useMarketData";
-import { useSentiment } from "@/hooks/useSentiment";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 
-const PriceChart = dynamic(() => import("@/components/PriceChart"), {
-  ssr: false,
-  loading: () => (
-    <div className="loader"><div className="spinner" /><span>Loading chart</span></div>
-  ),
-});
-
-const SentimentHeatmap = dynamic(() => import("@/components/SentimentHeatmap"), {
-  ssr: false,
-  loading: () => (
-    <div className="loader"><div className="spinner" /><span>Loading heatmap</span></div>
-  ),
-});
-
-const DebatePanel = dynamic(() => import("@/components/DebatePanel"), {
-  ssr: false,
-  loading: () => (
-    <div className="loader"><div className="spinner" /><span>Loading debate</span></div>
-  ),
-});
-
-const MLSignalsPanel = dynamic(() => import("@/components/MLSignalsPanel"), {
-  ssr: false,
-  loading: () => (
-    <div className="loader"><div className="spinner" /><span>Loading signals</span></div>
-  ),
-});
-
-const SidebarMLSignals = dynamic(() => import("@/components/SidebarMLSignals"), {
-  ssr: false,
-  loading: () => (
-    <div className="loader"><div className="spinner" /><span>Loading signals</span></div>
-  ),
-});
-
-const SidebarDebate = dynamic(() => import("@/components/SidebarDebate"), {
-  ssr: false,
-  loading: () => (
-    <div className="loader"><div className="spinner" /><span>Loading debate</span></div>
-  ),
-});
-
-// ── Formatters ────────────────────────────────────────────────────────────────
-const fmt  = (n: number, d = 2) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtV = (v: number) => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(0)}K` : String(v);
-const fmtT = (ms: number | null) => ms ? new Date(ms).toLocaleTimeString("en-US", { hour12: false }) : "—";
-
-// ── Static data ───────────────────────────────────────────────────────────────
-const TABS = [
-  { id: "terminal", label: "Terminal" },
-  { id: "heatmap",  label: "Sentiment",  phase: "2" },
-  { id: "debate",   label: "AI Debate",  phase: "3" },
-  { id: "signals",  label: "ML Signals", phase: "4" },
-];
-
-const SECTORS = ["All","Technology","Finance","Healthcare","Energy","Consumer","Crypto"] as const;
-const SECTOR_SHORT: Record<string, string> = {
-  All:"ALL", Technology:"TECH", Finance:"FINA", Healthcare:"HEAL",
-  Energy:"ENER", Consumer:"CONS", Crypto:"CRYP",
-};
-
-const SIGNALS = [
-  { name:"RSI (14)",   val:"61.4",  tag:"HOLD", cls:"sig-hold" },
-  { name:"MACD",       val:"+0.58", tag:"BUY",  cls:"sig-buy"  },
-  { name:"Bollinger",  val:"Upper", tag:"SELL", cls:"sig-sell" },
-  { name:"Sentiment",  val:"0.67",  tag:"BULL", cls:"sig-bull" },
-  { name:"Vol. Ratio", val:"1.4×",  tag:"BULL", cls:"sig-bull" },
-];
-
-const CS: Record<string, { title:string; desc:string; features:string[] }> = {
-  heatmap: {
-    title: "Live Sentiment Heatmap",
-    desc: "Every cell is an asset. Colour = sentiment, size = volume. Watch the grid shift in real time as news breaks.",
-    features: ["NewsAPI → VADER / FinBERT pipeline","D3.js treemap with live transitions","WebSocket push on sentiment change"],
-  },
-  debate: {
-    title: "Multi-Agent AI Debate",
-    desc: "Three LangGraph agents argue Bull, Bear, and Neutral in split panels — streaming simultaneously via WebSocket.",
-    features: ["LangGraph agent orchestration","Claude streaming via WebSocket","Persistent per-ticker debate memory"],
-  },
-  signals: {
-    title: "ML Signal Engine",
-    desc: "XGBoost trained on 5 years of OHLCV. Click any signal to see a SHAP waterfall chart explaining the output.",
-    features: ["XGBoost with full SHAP explanations","62% directional accuracy on backtest","Live feature engineering pipeline"],
-  },
-};
-
-// ── Component ─────────────────────────────────────────────────────────────────
-export default function Dashboard() {
-  const { data, isConnected, connectionStatus, lastUpdate, dataSource } = useMarketData();
-  const sentiment = useSentiment();
-
-  const [tab, setTab]       = useState("terminal");
-  const [sym, setSym]       = useState("AAPL");
-  const [sector, setSector] = useState("All");
-  const [ticks, setTicks]   = useState(0);
-
-  // Load selection from localStorage to persist across reloads
+/* ── Boot log line ──────────────────────────────────────────────────────────── */
+function BootLine({ text, delay, prefix = "✓" }: { text: string; delay: number; prefix?: string }) {
+  const [show, setShow] = useState(false);
   useEffect(() => {
-    const savedTab = localStorage.getItem("cobalt_tab");
-    if (savedTab) setTab(savedTab);
-    const savedSym = localStorage.getItem("cobalt_sym");
-    if (savedSym) setSym(savedSym);
-    const savedSector = localStorage.getItem("cobalt_sector");
-    if (savedSector) setSector(savedSector);
+    const t = setTimeout(() => setShow(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+
+  if (!show) return null;
+  return (
+    <div className="boot-line">
+      <span className="boot-ok">{prefix}</span>
+      <span className="boot-text">{text}</span>
+    </div>
+  );
+}
+
+/* ── Live clock ─────────────────────────────────────────────────────────────── */
+function Clock() {
+  const [time, setTime] = useState("");
+  useEffect(() => {
+    const tick = () => setTime(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    tick();
+    const i = setInterval(tick, 1000);
+    return () => clearInterval(i);
+  }, []);
+  return <span className="lp-clock">{time}</span>;
+}
+
+/* ── Main ───────────────────────────────────────────────────────────────────── */
+export default function LandingPage() {
+  const [phase, setPhase] = useState(0);
+
+  // Progress through boot phases
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setPhase(1), 400),
+      setTimeout(() => setPhase(2), 1000),
+      setTimeout(() => setPhase(3), 1600),
+      setTimeout(() => setPhase(4), 2200),
+    ];
+    return () => timers.forEach(clearTimeout);
   }, []);
 
-  const changeTab = (newTab: string) => {
-    setTab(newTab);
-    localStorage.setItem("cobalt_tab", newTab);
-  };
-
-  const changeSym = (newSym: string) => {
-    setSym(newSym);
-    localStorage.setItem("cobalt_sym", newSym);
-  };
-
-  const changeSector = (newSector: string) => {
-    setSector(newSector);
-    localStorage.setItem("cobalt_sector", newSector);
-  };
-
-  const [rowFlash, setRowFlash]     = useState<Record<string, "fp"|"fn">>({});
-  const [priceFlash, setPriceFlash] = useState<"fp"|"fn"|null>(null);
-  const prev = useRef<Record<string, number>>({});
-
-  const assets  = Object.values(data);
-  const sel     = data[sym];
-  const visible = sector === "All" ? assets : assets.filter(a => a.sector === sector);
-  const tape    = [...assets, ...assets];
-
-  // Flash on price change
-  useEffect(() => {
-    if (!assets.length) return;
-    setTicks(t => t + 1);
-    const f: Record<string, "fp"|"fn"> = {};
-    assets.forEach(a => {
-      const p = prev.current[a.symbol];
-      if (p !== undefined && p !== a.price) f[a.symbol] = a.price > p ? "fp" : "fn";
-      prev.current[a.symbol] = a.price;
-    });
-    if (!Object.keys(f).length) return;
-    setRowFlash(f);
-    if (sym && f[sym]) setPriceFlash(f[sym]);
-    const id = setTimeout(() => { setRowFlash({}); setPriceFlash(null); }, 380);
-    return () => clearTimeout(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
-
-  // Connection display
-  const connClass = isConnected ? "live" : connectionStatus === "connecting" ? "wait" : "offline";
-  const connLabel = isConnected
-    ? (dataSource === "yfinance" ? "Yahoo Finance" : dataSource === "alpaca_live" ? "Alpaca Live" : "Live")
-    : connectionStatus === "connecting" ? "Connecting" : "Offline";
-
-  const srcIsLive = dataSource === "yfinance" || dataSource === "alpaca_live";
-  const srcLabel  = dataSource === "yfinance" ? "Yahoo Finance"
-    : dataSource === "alpaca_live" ? "Alpaca Live"
-    : dataSource === "mock" ? "Simulated"
-    : "Connecting";
-
-  const chartLabel = dataSource === "yfinance" ? "30s · Yahoo Finance"
-    : dataSource === "alpaca_live" ? "500ms · Alpaca"
-    : "1s · Simulated";
-
   return (
-    <div className="shell">
+    <div className="lp-root">
 
-      {/* ── Ticker Tape ──────────────────────────────────────────────── */}
-      <div className="ticker-tape">
-        <div className="ticker-track">
-          {tape.map((a, i) => (
-            <div key={`${a.symbol}-${i}`} className="ticker-item">
-              <span className="tk-sym">{a.symbol}</span>
-              <span className="tk-px">${fmt(a.price)}</span>
-              <span className={`tk-chg ${a.change_pct >= 0 ? "up" : "dn"}`}>
-                {a.change_pct >= 0 ? "▲" : "▼"}{Math.abs(a.change_pct).toFixed(2)}%
-              </span>
-            </div>
-          ))}
+      {/* ── Top status bar ─────────────────────────── */}
+      <div className="lp-topbar">
+        <div className="lp-topbar-l">
+          <span className="lp-sys-tag">SYS</span>
+          <span className="lp-topbar-dim">cobaltquant v0.1.0</span>
+        </div>
+        <div className="lp-topbar-r">
+          <Clock />
         </div>
       </div>
 
-      {/* ── Topbar ───────────────────────────────────────────────────── */}
-      <header className="topbar">
-        {/* Brand */}
-        <div className="brand">
-          <div className="brand-mark">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <rect x="1" y="1" width="4" height="4" rx="1" fill="rgba(255,255,255,0.9)"/>
-              <rect x="7" y="1" width="4" height="4" rx="1" fill="rgba(255,255,255,0.55)"/>
-              <rect x="1" y="7" width="4" height="4" rx="1" fill="rgba(255,255,255,0.55)"/>
-              <rect x="7" y="7" width="4" height="4" rx="1" fill="rgba(255,255,255,0.3)"/>
+      {/* ── Grid structure ─────────────────────────── */}
+      <main className="lp-grid">
+
+        {/* Left Column: Metadata Index */}
+        <div className="lp-col">
+          <span className="lp-index-tag">Index / Contents</span>
+          
+          <div className="lp-index-list">
+            <div className="lp-index-item">
+              <span className="lp-index-num">SECTION 01</span>
+              <span className="lp-index-label">Market Streaming</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Real-time WebSockets asset streaming feed</span>
+            </div>
+            <div className="lp-index-item">
+              <span className="lp-index-num">SECTION 02</span>
+              <span className="lp-index-label">Vader Sentiment</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Social sentiment and NLP analysis pipelines</span>
+            </div>
+            <div className="lp-index-item">
+              <span className="lp-index-num">SECTION 03</span>
+              <span className="lp-index-label">AI Agent Debate</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Consensus discussions via GPT & Gemini models</span>
+            </div>
+            <div className="lp-index-item">
+              <span className="lp-index-num">SECTION 04</span>
+              <span className="lp-index-label">XGBoost Signals</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Predictive direction indices and SHAP explanations</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Center Column: Editorial Header */}
+        <div className="lp-col lp-col-center">
+          <div>
+            <span className="lp-volume">Vol. 01 / Issue 01</span>
+            
+            <h1 className="lp-main-title">
+              CobaltQuant
+            </h1>
+            
+            <p className="lp-tagline">
+              An autonomous quantitative intelligence terminal. Real-time multi-agent decision support, predictive feature scoring, and streaming sentiment analysis.
+            </p>
+          </div>
+
+          {/* Interactive Editorial SVG Chart */}
+          <div className="lp-vector-chart">
+            <svg viewBox="0 0 400 150" fill="none" style={{ width: "100%" }}>
+              {/* Grid lines */}
+              <line x1="0" y1="30" x2="400" y2="30" stroke="var(--b1)" strokeWidth="1" strokeDasharray="2 4" />
+              <line x1="0" y1="75" x2="400" y2="75" stroke="var(--b1)" strokeWidth="1" />
+              <line x1="0" y1="120" x2="400" y2="120" stroke="var(--b1)" strokeWidth="1" strokeDasharray="2 4" />
+              
+              <line x1="100" y1="0" x2="100" y2="150" stroke="var(--b1)" strokeWidth="1" strokeDasharray="2 4" />
+              <line x1="200" y1="0" x2="200" y2="150" stroke="var(--b1)" strokeWidth="1" />
+              <line x1="300" y1="0" x2="300" y2="150" stroke="var(--b1)" strokeWidth="1" strokeDasharray="2 4" />
+
+              {/* Trend path */}
+              <path
+                d="M 0 110 Q 50 120 100 80 T 200 60 T 300 110 T 400 20"
+                fill="none"
+                stroke="var(--blue)"
+                strokeWidth="1.5"
+                className="lp-trend-path"
+              />
+              
+              {/* Nodes */}
+              <circle cx="200" cy="60" r="3.5" fill="var(--blue)" />
+              <circle cx="200" cy="60" r="9" stroke="var(--blue)" strokeWidth="1" strokeDasharray="2 2" className="lp-node-pulse" />
+              
+              <text x="210" y="55" fill="var(--blue)" fontSize="8.5" fontFamily="var(--mono)" letterSpacing="0.04em">FORECAST_INDEX: +4.82%</text>
+              <text x="10" y="20" fill="var(--t4)" fontSize="8" fontFamily="var(--mono)" letterSpacing="0.06em">PREDICTIVE STOCHASTIC RANGE</text>
+              <text x="345" y="140" fill="var(--t4)" fontSize="8" fontFamily="var(--mono)" letterSpacing="0.06em">SEC_INDEX</text>
             </svg>
           </div>
-          <span className="brand-wordmark">Cobalt<em>Quant</em></span>
-          <div className="divider" />
-          <span className="brand-tag">Kashish&apos;s Terminal</span>
-        </div>
 
-        {/* Nav */}
-        <nav className="topbar-nav">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              className={`nav-tab ${tab === t.id ? "active" : ""}`}
-              onClick={() => changeTab(t.id)}
-            >
-              {t.label}
-              {t.phase && <span className="nav-phase">P{t.phase}</span>}
-            </button>
-          ))}
-        </nav>
-
-        {/* Status */}
-        <div className="topbar-right">
-          <div className={`status-pill ${connClass}`}>
-            <div className={`status-dot ${isConnected ? "pulse" : ""}`} />
-            {connLabel}
+          <div className="lp-coordinates">
+            <span>COORD: 37.7749° N, 122.4194° W</span>
+            <span>SYS: ACTIVE</span>
           </div>
         </div>
-      </header>
 
-      {/* ── Workspace ────────────────────────────────────────────────── */}
-      {tab === "terminal" ? (
-        <div className="workspace">
-
-          {/* LEFT: Watchlist */}
-          <aside className="sidebar">
-            <div className="wl-header">
-              <span className="wl-title">Watchlist</span>
-            </div>
-            <div className="filter-row">
-              {SECTORS.map(s => (
-                <button
-                  key={s}
-                  className={`f-chip ${sector === s ? "on" : ""}`}
-                  onClick={() => changeSector(s)}
-                >
-                  {SECTOR_SHORT[s]}
-                </button>
-              ))}
-            </div>
-            <div className="wl-col-head">
-              <span>Symbol</span>
-              <span>Price</span>
-              <span>Change</span>
-            </div>
-            <div className="asset-list">
-              {visible.map(a => {
-                const up = a.change_pct >= 0;
-                return (
-                  <div
-                    key={a.symbol}
-                    className={`asset-row ${sym === a.symbol ? "active" : ""} ${rowFlash[a.symbol] ?? ""}`}
-                    onClick={() => changeSym(a.symbol)}
-                  >
-                    <div className="ar-info">
-                      <span className="ar-sym">{a.symbol}</span>
-                      <span className="ar-name">{a.name}</span>
-                    </div>
-                    <span className="ar-price">${fmt(a.price)}</span>
-                    <span className={`ar-chg ${up ? "up" : "dn"}`}>
-                      {up ? "+" : ""}{a.change_pct.toFixed(2)}%
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </aside>
-
-          {/* CENTER: Chart */}
-          <main className="center">
-            {/* Hero */}
-            <div className="hero">
-              <div className="hero-top">
-                <span className="hero-sym">{sym}</span>
-                {sel?.sector && (
-                  <span className={`sector-badge sb-${sel.sector}`}>{sel.sector}</span>
-                )}
-                <span className="hero-name">{sel?.name}</span>
-              </div>
-
-              <div className="hero-price-row">
-                <span className={`hero-price ${priceFlash ?? ""}`}>
-                  ${sel ? fmt(sel.price) : "—"}
-                </span>
-                {sel && (
-                  <span className={`hero-badge ${sel.change_pct >= 0 ? "up" : "dn"}`}>
-                    {sel.change_pct >= 0 ? "▲" : "▼"} {Math.abs(sel.change_pct).toFixed(2)}%
-                    &nbsp;({sel.change_pct >= 0 ? "+" : ""}{fmt(sel.change)})
-                  </span>
-                )}
-              </div>
-
-              <div className="hero-stats">
-                <div className="hero-stat">
-                  <span className="hs-label">Open</span>
-                  <span className="hs-val">${sel ? fmt(sel.open) : "—"}</span>
-                </div>
-                <div className="stat-sep" />
-                <div className="hero-stat">
-                  <span className="hs-label">High</span>
-                  <span className="hs-val hi">${sel ? fmt(sel.high) : "—"}</span>
-                </div>
-                <div className="stat-sep" />
-                <div className="hero-stat">
-                  <span className="hs-label">Low</span>
-                  <span className="hs-val lo">${sel ? fmt(sel.low) : "—"}</span>
-                </div>
-                <div className="stat-sep" />
-                <div className="hero-stat">
-                  <span className="hs-label">Volume</span>
-                  <span className="hs-val">{sel ? fmtV(sel.volume) : "—"}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Chart */}
-            <div className="chart-wrap">
-              <div className="chart-toolbar">
-                <span className="ct-sym">{sym}</span>
-                <div className="ct-sep" />
-                <span className="ct-label">{chartLabel}</span>
-              </div>
-              <div className="chart-inner">
-                <PriceChart symbol={sym} ticks={[]} currentPrice={sel?.price ?? null} />
-              </div>
-            </div>
-          </main>
-
-          {/* RIGHT: Signals + Agents */}
-          <aside className="right-panel">
-            <SidebarMLSignals symbol={sym} />
-            <SidebarDebate symbol={sym} />
-          </aside>
-        </div>
-
-      ) : tab === "heatmap" ? (
-        <SentimentHeatmap data={sentiment.data} isConnected={sentiment.isConnected} />
-      ) : tab === "debate" ? (
-        <DebatePanel ticker={sym} />
-      ) : tab === "signals" ? (
-        <MLSignalsPanel ticker={sym} />
-      ) : (
-        <div className="cs-view">
-          <div className="cs-card">
-            <span className="cs-chip">Phase {TABS.find(t => t.id === tab)?.phase} — Coming Soon</span>
-            <div className="cs-title">{CS[tab]?.title}</div>
-            <div className="cs-desc">{CS[tab]?.desc}</div>
-            <div className="cs-list">
-              {CS[tab]?.features.map(f => (
-                <div key={f} className="cs-item">
-                  <div className="cs-item-dot" />
-                  <span>{f}</span>
-                </div>
-              ))}
+        {/* Right Column: Technical Logs & Enter Panel */}
+        <div className="lp-col lp-col-right">
+          <div>
+            <div className="lp-log-title">System Boot Process</div>
+            
+            <div className="lp-boot-log">
+              <BootLine delay={600} text="WebSocket price streaming (16 assets, 6 sectors)" />
+              <BootLine delay={900} text="VADER sentiment engine + Yahoo Finance pipeline" />
+              <BootLine delay={1200} text="Multi-agent AI debate (GPT-4o / Gemini)" />
+              <BootLine delay={1500} text="XGBoost signal engine + SHAP explainability" />
+              <BootLine delay={1800} text="Redis pub/sub, batch persistence, structured logging" />
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ── Status Bar ───────────────────────────────────────────────── */}
-      <footer className="statusbar">
-        <div className="sb-left">
-          <div className={isConnected ? "sb-live" : "sb-offline"}>
-            <div className="sb-dot" />
-            {isConnected ? "Connected" : "Offline"}
-          </div>
-          <span className={`src-tag ${srcIsLive ? "live" : "sim"}`}>{srcLabel}</span>
+          {phase >= 3 && (
+            <div className="lp-enter-section">
+              <div className="lp-enter-prompt">
+                <span className="lp-prompt">$</span>
+                <span className="lp-enter-text">system ready</span>
+              </div>
+              <Link href="/dashboard" className="lp-enter-btn" id="enter-terminal-btn">
+                Enter Terminal <span className="lp-enter-arrow">→</span>
+              </Link>
+            </div>
+          )}
         </div>
-        <div className="sb-right">
-          <span>Ticks {ticks.toLocaleString()}</span>
-          <span>{visible.length} assets</span>
-          <span>Last {fmtT(lastUpdate)}</span>
-          <span>CobaltQuant v0.1</span>
-        </div>
-      </footer>
 
+      </main>
+
+      {/* ── Bottom bar ─────────────────────────────── */}
+      <div className="lp-bottombar">
+        <span>Built by Kashish Grewal</span>
+        <span className="lp-sep">·</span>
+        <span>MIT License</span>
+        <span className="lp-sep">·</span>
+        <span>Not financial advice</span>
+      </div>
     </div>
   );
 }

@@ -28,6 +28,14 @@ router = APIRouter()
 
 @router.websocket("/ws/debate")
 async def debate_ws(websocket: WebSocket):
+    # Auth check
+    from auth import verify_ws_token
+    from config import get_settings
+    settings = get_settings()
+    auth_result = await verify_ws_token(websocket)
+    if auth_result is None and settings.jwt_secret:
+        return
+
     await websocket.accept()
     logger.info("Debate client connected")
     active_task: asyncio.Task | None = None

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ── Redis ────────────────────────────────────────────────────────────────────
   # Acts as the "nervous system". Backend publishes price updates here.

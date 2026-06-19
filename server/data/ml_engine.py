@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from collections import defaultdict
 import time
 import os
 import json
@@ -124,12 +125,14 @@ class SignalResult:
 
 _cache: dict[str, SignalResult] = {}
 _CACHE_TTL = 300  # 5 minutes
+_training_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 async def get_signal(ticker: str) -> SignalResult:
     """
     Returns a cached signal or trains a fresh XGBoost model.
     Runs the heavy CPU work in a thread pool so it doesn't block the event loop.
+    Uses a per-ticker lock so concurrent requests wait for the first training to finish.
     """
     now = time.time()
     cached = _cache.get(ticker)
@@ -137,10 +140,19 @@ async def get_signal(ticker: str) -> SignalResult:
         logger.info(f"ML cache hit: {ticker}")
         return cached
 
-    logger.info(f"ML training: {ticker}")
-    result = await asyncio.get_event_loop().run_in_executor(None, _train_and_predict, ticker)
-    _cache[ticker] = result
-    return result
+    # Per-ticker lock: if 5 clients request AAPL simultaneously, only the first trains.
+    # The rest wait and get the cached result.
+    async with _training_locks[ticker]:
+        # Double-check cache inside the lock (another request may have finished training)
+        cached = _cache.get(ticker)
+        if cached and cached.error is None and (time.time() - cached.trained_at) < _CACHE_TTL:
+            logger.info(f"ML cache hit (post-lock): {ticker}")
+            return cached
+
+        logger.info(f"ML training: {ticker}")
+        result = await asyncio.get_running_loop().run_in_executor(None, _train_and_predict, ticker)
+        _cache[ticker] = result
+        return result
 
 
 def _train_and_predict(ticker: str) -> SignalResult:

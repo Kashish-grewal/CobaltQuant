@@ -19,14 +19,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
+from logging_config import setup_logging, RequestIDMiddleware
 import app_state
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-logger = logging.getLogger(__name__)
 settings = get_settings()
+setup_logging(environment=settings.environment)
+logger = logging.getLogger(__name__)
 
 import redis.asyncio as aioredis
 import json
@@ -73,7 +71,7 @@ async def redis_listener_task():
             await pubsub.unsubscribe("prices", "sentiment")
         except Exception:
             pass
-        await r.close()
+        await r.aclose()
 
 
 async def _mock_broadcast_loop():
@@ -101,10 +99,19 @@ async def lifespan(app: FastAPI):
     logger.info(f"🚀 CobaltQuant — DATA_MODE={settings.data_mode}")
     tasks = []
 
+    # ── Database initialisation ───────────────────────────────────────
+    from db import init_db, close_db
+    from persistence import price_persistence
+    await init_db()
+    tasks.append(price_persistence.start())
+
     # Start the Redis subscriber task
     tasks.append(asyncio.create_task(redis_listener_task()))
 
     async def _on_tick(ticks: list[dict], source: str):
+        # Persist to database in background
+        price_persistence.add_ticks(ticks, source=source)
+        # Broadcast to WebSocket clients via Redis
         await publish_message(
             channel="prices",
             message={
@@ -133,8 +140,7 @@ async def lifespan(app: FastAPI):
             tasks.append(asyncio.create_task(client.run()))
         else:
             from data.alpaca_client import AlpacaLiveClient
-            client = AlpacaLiveClient(on_tick=lambda t: _on_tick(t, "alpaca_live"))
-            client._source_label = "alpaca_live"
+            client = AlpacaLiveClient(on_tick=lambda t: _on_tick(t, client._source_label))
             app_state.alpaca_client = client
             tasks.append(asyncio.create_task(client.run()))
             logger.info("📡 Alpaca live client started")
@@ -162,6 +168,15 @@ async def lifespan(app: FastAPI):
 
     tasks.append(asyncio.create_task(_sentiment_loop()))
 
+    # ── Security warnings for production ──────────────────────────────────────
+    if settings.environment == "production":
+        if not settings.jwt_secret:
+            logger.warning("⚠️  JWT_SECRET not set — using auto-generated secret. Tokens will NOT survive restarts!")
+        if not settings.api_key:
+            logger.warning("⚠️  API_KEY not set — REST endpoints are UNPROTECTED.")
+        if not settings.sentry_dsn:
+            logger.warning("⚠️  SENTRY_DSN not set — errors will NOT be tracked.")
+
     yield  # ── server running ──
 
     for t in tasks:
@@ -176,11 +191,37 @@ async def lifespan(app: FastAPI):
         
     # Close Redis client connections
     try:
-        await redis_pub.close()
+        await redis_pub.aclose()
     except Exception:
         pass
+    # Close database connections
+    from db import close_db
+    from persistence import price_persistence
+    await price_persistence.stop()
+    await close_db()
         
     logger.info("🛑 Shutdown complete")
+
+
+# ── Sentry Error Monitoring ──────────────────────────────────────────────────
+# Initialise Sentry BEFORE creating the FastAPI app so it can hook into the
+# framework. If SENTRY_DSN is empty, this is a complete no-op.
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            traces_sample_rate=0.1,             # 10% of requests traced
+            profiles_sample_rate=0.1,            # 10% of traced requests profiled
+            environment=settings.environment,
+            release=f"cobaltquant@0.1.0",
+            send_default_pii=False,              # Don't send user data to Sentry
+        )
+        logger.info("🛡️  Sentry error tracking initialised")
+    except ImportError:
+        logger.warning("sentry-sdk not installed — error tracking disabled")
+else:
+    logger.info("ℹ️  SENTRY_DSN not set — Sentry disabled (set it in .env for production)")
 
 
 app = FastAPI(
@@ -192,30 +233,53 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Request ID middleware — assigns a unique ID to every request for tracing
+app.add_middleware(RequestIDMiddleware)
+
+# ── Prometheus Metrics ────────────────────────────────────────────────────────
+# Exposes /metrics endpoint for Prometheus scraping.
+# Tracks: request count, latency histograms, in-progress requests.
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/metrics", "/docs", "/openapi.json"],
+    ).instrument(app).expose(app, endpoint="/metrics")
+    logger.info("📊 Prometheus metrics exposed at /metrics")
+except ImportError:
+    logger.info("ℹ️  prometheus-fastapi-instrumentator not installed — metrics disabled")
+
+
+from schemas import RootResponse
 from routes.api import router as api_router
 from routes.prices_ws import router as prices_ws_router
 from routes.sentiment_ws import router as sentiment_ws_router
 from routes.debate_ws import router as debate_ws_router
 from routes.signals_api import router as signals_router
+from routes.auth_routes import router as auth_router
 
 app.include_router(api_router)
 app.include_router(prices_ws_router)
 app.include_router(sentiment_ws_router)
 app.include_router(debate_ws_router)
 app.include_router(signals_router)
+app.include_router(auth_router)
 
 
-@app.get("/")
+@app.get("/", response_model=RootResponse)
 async def root():
     return {
         "name": "CobaltQuant API",
         "version": "0.1.0",
         "data_mode": settings.data_mode,
         "docs": "/docs",
+        "metrics": "/metrics",
     }
+

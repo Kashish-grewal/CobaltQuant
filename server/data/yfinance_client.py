@@ -29,28 +29,9 @@ from typing import Callable, Awaitable
 
 import yfinance as yf
 
+from data.assets import ASSET_META, SYMBOLS
+
 logger = logging.getLogger(__name__)
-
-ASSET_META: dict[str, dict] = {
-    "AAPL":  {"name": "Apple",               "sector": "Technology"},
-    "MSFT":  {"name": "Microsoft",           "sector": "Technology"},
-    "NVDA":  {"name": "NVIDIA",              "sector": "Technology"},
-    "GOOGL": {"name": "Alphabet",            "sector": "Technology"},
-    "META":  {"name": "Meta",                "sector": "Technology"},
-    "AMD":   {"name": "AMD",                 "sector": "Technology"},
-    "JPM":   {"name": "JPMorgan",            "sector": "Finance"},
-    "GS":    {"name": "Goldman Sachs",       "sector": "Finance"},
-    "V":     {"name": "Visa",                "sector": "Finance"},
-    "JNJ":   {"name": "J&J",                 "sector": "Healthcare"},
-    "PFE":   {"name": "Pfizer",              "sector": "Healthcare"},
-    "XOM":   {"name": "Exxon",               "sector": "Energy"},
-    "CVX":   {"name": "Chevron",             "sector": "Energy"},
-    "AMZN":  {"name": "Amazon",              "sector": "Consumer"},
-    "TSLA":  {"name": "Tesla",               "sector": "Consumer"},
-    "IBIT":  {"name": "iShares Bitcoin ETF", "sector": "Crypto"},
-}
-
-SYMBOLS = list(ASSET_META.keys())
 POLL_INTERVAL = 30.0
 
 # Reuse a thread pool — cheaper than creating threads on every poll

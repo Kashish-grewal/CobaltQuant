@@ -7,6 +7,7 @@ export interface DebateChunk {
   agent?: "bull" | "bear" | "neutral";
   chunk?: string;
   ticker?: string;
+  offline?: boolean;
 }
 
 export type AgentText = { bull: string; bear: string; neutral: string };
@@ -17,6 +18,7 @@ interface UseDebateReturn {
   agentText:    AgentText;
   status:       DebateStatus;
   activeTicker: string | null;
+  isOffline:    boolean;
   startDebate:  (ticker: string) => void;
   reset:        () => void;
 }
@@ -30,6 +32,7 @@ export function useDebate(): UseDebateReturn {
   const [agentText, setAgentText]     = useState<AgentText>(EMPTY);
   const [status, setStatus]           = useState<DebateStatus>("idle");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
+  const [isOffline, setIsOffline]     = useState(false);
 
   const wsRef  = useRef<WebSocket | null>(null);
   const dead   = useRef(false);
@@ -53,6 +56,10 @@ export function useDebate(): UseDebateReturn {
           setAgentText(EMPTY);
           setActiveTicker(msg.ticker ?? null);
           setStatus("streaming");
+          setIsOffline(false);
+        } else if (msg.type === "debate_chunk" && msg.agent && msg.offline) {
+          // Server sent offline marker — debates are cached templates, not live AI
+          setIsOffline(true);
         } else if (msg.type === "debate_chunk" && msg.agent && msg.chunk) {
           setAgentText(prev => ({
             ...prev,
@@ -96,7 +103,8 @@ export function useDebate(): UseDebateReturn {
     setAgentText(EMPTY);
     setStatus("idle");
     setActiveTicker(null);
+    setIsOffline(false);
   }, []);
 
-  return { agentText, status, activeTicker, startDebate, reset };
+  return { agentText, status, activeTicker, isOffline, startDebate, reset };
 }

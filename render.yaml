@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: cobaltquant-backend
+    env: docker
+    dockerfilePath: Dockerfile.prod
+    dockerContext: server
+    plan: free
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATA_MODE
+        value: yfinance
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: cobaltquant-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_KEY
+        generateValue: true
+
+  - type: redis
+    name: cobaltquant-redis
+    plan: free
+    ipAllowList: []

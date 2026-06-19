@@ -2,25 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as d3 from "d3";
-
-interface ShapEntry {
-  feature: string;
-  value:   number;
-  shap:    number;
-}
-
-interface SignalData {
-  ticker:         string;
-  signal:         "BUY" | "SELL" | "HOLD";
-  confidence:     number;
-  probabilities:  Record<string, number>;
-  shap_values:    ShapEntry[];
-  feature_values: Record<string, number>;
-  model_accuracy: number;
-  error?:         string;
-}
-
-type FetchStatus = "idle" | "loading" | "done" | "error";
+import type { ShapEntry, SignalData, FetchStatus } from "@/types/signals";
 
 interface Props { ticker: string }
 
@@ -44,150 +26,103 @@ function ShapWaterfall({ data }: { data: ShapEntry[] }) {
     if (!data.length || !svgRef.current || !wrapRef.current) return;
 
     const W      = width || wrapRef.current.clientWidth || 400;
-    const barH   = 28;
-    const gap    = 5;
-    const labelW = 130;
-    const valW   = 55;
-    const H      = data.length * (barH + gap) + 50;
+    const barH   = 26;
+    const gap    = 6;
+    const labelW = 120;   // feature name column
+    const valW   = 50;    // raw value column on right
+    const padding = 16;   // right margin
+    const H      = data.length * (barH + gap) + 40;
+
+    // The bar drawing area: split in two halves from a center zero
+    // Negative bars extend LEFT from zero, positive bars extend RIGHT
+    const chartW = W - labelW - valW - padding;
+    const halfW  = chartW / 2;  // each side gets half
+    const zeroX  = labelW + halfW; // absolute x of the zero line
 
     const svg = d3.select(svgRef.current).attr("width", W).attr("height", H);
-    
-    // Ensure container groups exist
-    let g = svg.select<SVGGElement>("g.main-group");
-    if (g.empty()) {
-      g = svg.append("g").attr("class", "main-group").attr("transform", `translate(${labelW},20)`);
-    }
-    
-    let labelsGroup = svg.select<SVGGElement>("g.labels-group");
-    if (labelsGroup.empty()) {
-      labelsGroup = svg.append("g").attr("class", "labels-group").attr("transform", "translate(0,20)");
-    }
+    svg.selectAll("*").remove(); // full redraw for simplicity
 
     const maxAbs = d3.max(data, d => Math.abs(d.shap)) ?? 1;
-    const barMax = W - labelW - valW - 20;
 
-    // Zero line
-    let zeroLine = g.select<SVGLineElement>("line.zero-line");
-    if (zeroLine.empty()) {
-      zeroLine = g.append("line")
-        .attr("class", "zero-line")
-        .attr("stroke", "rgba(255,255,255,0.12)")
-        .attr("stroke-width", 1)
-        .attr("stroke-dasharray", "3,3");
-    }
-    zeroLine
-      .attr("x1", 0).attr("y1", 0)
-      .attr("x2", 0).attr("y2", H - 30);
+    // ── Feature labels (left column) ─────────────────────────────────
+    const labG = svg.append("g").attr("transform", "translate(0, 20)");
+    labG.selectAll("text.feat")
+      .data(data)
+      .join("text")
+      .attr("class", "feat")
+      .attr("x", labelW - 8)
+      .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
+      .attr("text-anchor", "end")
+      .attr("dominant-baseline", "middle")
+      .attr("fill", "#98AABF")
+      .attr("font-size", 10)
+      .attr("font-family", "'Inter', sans-serif")
+      .attr("font-weight", "500")
+      .text(d => d.feature);
 
-    // ── Bind BARS ──────────────────────────────────────────
-    const bars = g.selectAll<SVGRectElement, ShapEntry>("rect.bar")
-      .data(data, d => d.feature);
+    // ── Zero center line ─────────────────────────────────────────────
+    const g = svg.append("g").attr("transform", `translate(${zeroX}, 20)`);
+    g.append("line")
+      .attr("x1", 0).attr("y1", -8)
+      .attr("x2", 0).attr("y2", H - 30)
+      .attr("stroke", "rgba(255,255,255,0.1)")
+      .attr("stroke-width", 1)
+      .attr("stroke-dasharray", "3,4");
 
-    // Enter + Update
-    bars.join(
-      enter => enter.append("rect")
-        .attr("class", "bar")
-        .attr("x", d => d.shap > 0 ? 0 : -((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)))
-        .attr("y", (d, i) => i * (barH + gap))
-        .attr("width", 0)
-        .attr("height", barH)
-        .attr("rx", 3)
-        .attr("fill", d => d.shap > 0 ? "#26A69A" : "#EF5350")
-        .attr("opacity", 0.85)
-        .call(enter => enter.transition().duration(500).delay((d, i) => i * 60)
-          .attr("width", d => (Math.abs(d.shap) / maxAbs) * (barMax * 0.85))),
-      update => update
-        .transition().duration(400)
-        .attr("x", d => d.shap > 0 ? 0 : -((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)))
-        .attr("y", (d, i) => i * (barH + gap))
-        .attr("width", d => (Math.abs(d.shap) / maxAbs) * (barMax * 0.85))
-        .attr("fill", d => d.shap > 0 ? "#26A69A" : "#EF5350"),
-      exit => exit.remove()
-    );
+    // ── Bars ─────────────────────────────────────────────────────────
+    data.forEach((d, i) => {
+      const bw  = (Math.abs(d.shap) / maxAbs) * (halfW * 0.9);
+      const y   = i * (barH + gap);
+      const pos = d.shap > 0;
+      const col = pos ? "#00C896" : "#FF4D6D";
+      const x   = pos ? 0 : -bw;
 
-    // ── Bind BAR LABELS (values inside bars) ──────────────
-    const barLabels = g.selectAll<SVGTextElement, ShapEntry>("text.bar-label")
-      .data(data, d => d.feature);
+      // bar
+      g.append("rect")
+        .attr("x", x).attr("y", y)
+        .attr("width", 0).attr("height", barH)
+        .attr("rx", 3).attr("fill", col).attr("opacity", 0.82)
+        .transition().duration(500).delay(i * 50)
+        .attr("x", x).attr("width", bw);
 
-    barLabels.join(
-      enter => enter.append("text")
-        .attr("class", "bar-label")
-        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
-        .attr("text-anchor", d => d.shap > 0 ? "end" : "start")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", "#fff")
-        .attr("font-size", 9)
-        .attr("font-family", "'JetBrains Mono',monospace")
-        .attr("font-weight", "700")
-        .attr("opacity", 0)
-        .text(d => (d.shap > 0 ? "+" : "") + d.shap.toFixed(3))
-        .call(enter => enter.transition().duration(500).delay((d, i) => i * 60)
-          .attr("x", d => {
-            const bw = (Math.abs(d.shap) / maxAbs) * (barMax * 0.85);
-            return d.shap > 0 ? Math.max(bw - 4, 4) : Math.min(-bw + 4, -4);
-          })
-          .attr("opacity", d => ((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)) > 30 ? 1 : 0)),
-      update => update
-        .text(d => (d.shap > 0 ? "+" : "") + d.shap.toFixed(3))
-        .transition().duration(400)
-        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
-        .attr("text-anchor", d => d.shap > 0 ? "end" : "start")
-        .attr("x", d => {
-          const bw = (Math.abs(d.shap) / maxAbs) * (barMax * 0.85);
-          return d.shap > 0 ? Math.max(bw - 4, 4) : Math.min(-bw + 4, -4);
-        })
-        .attr("opacity", d => ((Math.abs(d.shap) / maxAbs) * (barMax * 0.85)) > 30 ? 1 : 0),
-      exit => exit.remove()
-    );
+      // value label inside bar (only if bar wide enough)
+      if (bw > 35) {
+        g.append("text")
+          .attr("x", pos ? bw - 5 : -bw + 5)
+          .attr("y", y + barH / 2 + 1)
+          .attr("text-anchor", pos ? "end" : "start")
+          .attr("dominant-baseline", "middle")
+          .attr("fill", "rgba(255,255,255,0.95)")
+          .attr("font-size", 9)
+          .attr("font-family", "'JetBrains Mono', monospace")
+          .attr("font-weight", "700")
+          .attr("opacity", 0)
+          .text((d.shap > 0 ? "+" : "") + d.shap.toFixed(3))
+          .transition().duration(300).delay(i * 50 + 300)
+          .attr("opacity", 1);
+      }
+    });
 
-    // ── Bind FEATURE LABELS (left text) ──────────────────
-    const featLabels = labelsGroup.selectAll<SVGTextElement, ShapEntry>("text.feat-label")
-      .data(data, d => d.feature);
-
-    featLabels.join(
-      enter => enter.append("text")
-        .attr("class", "feat-label")
-        .attr("x", labelW - 8)
-        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
-        .attr("text-anchor", "end")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", "#8694A8")
-        .attr("font-size", 10)
-        .attr("font-family", "'Inter',sans-serif")
-        .text(d => d.feature),
-      update => update
-        .transition().duration(400)
-        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1),
-      exit => exit.remove()
-    );
-
-    // ── Bind FEATURE RAW VALUES (right text) ──────────────
-    const rawLabels = labelsGroup.selectAll<SVGTextElement, ShapEntry>("text.raw-label")
-      .data(data, d => d.feature);
-
-    rawLabels.join(
-      enter => enter.append("text")
-        .attr("class", "raw-label")
-        .attr("x", labelW + barMax + 8)
-        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
-        .attr("dominant-baseline", "middle")
-        .attr("fill", "#4A5568")
-        .attr("font-size", 9)
-        .attr("font-family", "'JetBrains Mono',monospace")
-        .text(d => d.value.toFixed(2)),
-      update => update
-        .text(d => d.value.toFixed(2))
-        .transition().duration(400)
-        .attr("x", labelW + barMax + 8)
-        .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1),
-      exit => exit.remove()
-    );
+    // ── Raw values (right column) ─────────────────────────────────────
+    const rawG = svg.append("g").attr("transform", "translate(0, 20)");
+    rawG.selectAll("text.raw")
+      .data(data)
+      .join("text")
+      .attr("class", "raw")
+      .attr("x", W - padding - 4)
+      .attr("y", (d, i) => i * (barH + gap) + barH / 2 + 1)
+      .attr("text-anchor", "end")
+      .attr("dominant-baseline", "middle")
+      .attr("fill", "#4E5E73")
+      .attr("font-size", 9)
+      .attr("font-family", "'JetBrains Mono', monospace")
+      .text(d => d.value.toFixed(2));
 
   }, [data, width]);
 
   return (
     <div ref={wrapRef} style={{ width: "100%" }}>
-      <svg ref={svgRef} style={{ display: "block", overflow: "visible" }} />
+      <svg ref={svgRef} style={{ display: "block", overflow: "hidden" }} />
     </div>
   );
 }
@@ -362,7 +297,7 @@ export default function MLSignalsPanel({ ticker }: Props) {
                 </div>
                 {(["BUY", "HOLD", "SELL"] as const).map(label => {
                   const p = result.probabilities[label] ?? 0;
-                  const c = label === "BUY" ? "#26A69A" : label === "SELL" ? "#EF5350" : "#F59E0B";
+                  const c = label === "BUY" ? "#00C896" : label === "SELL" ? "#FF4D6D" : "#FFB020";
                   return (
                     <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                       <span style={{ fontFamily: "var(--mono)", fontSize: 8, fontWeight: 700, color: c, width: 30 }}>
@@ -393,8 +328,8 @@ export default function MLSignalsPanel({ ticker }: Props) {
                   SHAP FEATURE IMPORTANCE — WHY {result.signal}?
                 </div>
                 <div style={{ fontSize: 9, color: "var(--t4)" }}>
-                  <span style={{ color: "#26A69A", fontWeight: 700 }}>■ Green</span> = pushes toward {result.signal} &nbsp;
-                  <span style={{ color: "#EF5350", fontWeight: 700 }}>■ Red</span> = pushes away from {result.signal}
+                  <span style={{ color: "#00C896", fontWeight: 700 }}>■ Green</span> = pushes toward {result.signal} &nbsp;
+                  <span style={{ color: "#FF4D6D", fontWeight: 700 }}>■ Red</span> = pushes away from {result.signal}
                 </div>
               </div>
               <ShapWaterfall data={result.shap_values} />

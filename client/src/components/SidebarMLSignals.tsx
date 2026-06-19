@@ -1,29 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { ShapEntry, SignalData, FetchStatus } from "@/types/signals";
 
-interface ShapEntry {
-  feature: string;
-  value:   number;
-  shap:    number;
-}
-
-interface SignalData {
-  ticker:         string;
-  signal:         "BUY" | "SELL" | "HOLD";
-  confidence:     number;
-  probabilities:  Record<string, number>;
-  shap_values:    ShapEntry[];
-  feature_values: Record<string, number>;
-  model_accuracy: number;
-  error?:         string;
-}
-
-type FetchStatus = "idle" | "loading" | "done" | "error";
-
-interface Props {
-  symbol: string;
-}
+interface Props { symbol: string }
 
 const fmtVal = (featureName: string, val: number): string => {
   if (featureName.includes("Momentum") || featureName.includes("Volatility") || featureName.includes("ATR")) {
@@ -39,6 +19,43 @@ const fmtVal = (featureName: string, val: number): string => {
   }
   return val.toFixed(1);
 };
+
+function ShapForceBar({ shap }: { shap: number }) {
+  const maxPercent = 50; // Max half width
+  // A SHAP value of 0.008 represents maximum bar width on each side
+  const rawPct = Math.abs(shap) * 6250;
+  const widthPct = Math.min(rawPct, maxPercent);
+  const up = shap > 0;
+  
+  return (
+    <div className="shap-force-bar" style={{
+      width: "50px",
+      height: "4px",
+      background: "var(--s3)",
+      position: "relative",
+      border: "1px solid var(--b1)",
+      overflow: "hidden",
+      borderRadius: "1px"
+    }}>
+      <div style={{
+        position: "absolute",
+        left: "50%",
+        top: 0,
+        bottom: 0,
+        width: "1px",
+        background: "rgba(255,255,255,0.12)",
+        zIndex: 1
+      }} />
+      <div style={{
+        position: "absolute",
+        left: up ? "50%" : `calc(50% - ${widthPct}%)`,
+        width: `${widthPct}%`,
+        height: "100%",
+        background: up ? "var(--green)" : "var(--red)"
+      }} />
+    </div>
+  );
+}
 
 export default function SidebarMLSignals({ symbol }: Props) {
   const [result, setResult] = useState<SignalData | null>(null);
@@ -64,7 +81,13 @@ export default function SidebarMLSignals({ symbol }: Props) {
   useEffect(() => {
     if (symbol && symbol !== prevSymbol.current) {
       prevSymbol.current = symbol;
-      fetchSignal(symbol);
+      // Debounce: wait 400ms before fetching to avoid spamming during rapid ticker switching
+      const timer = setTimeout(() => {
+        if (prevSymbol.current === symbol) {
+          fetchSignal(symbol);
+        }
+      }, 400);
+      return () => clearTimeout(timer);
     }
   }, [symbol, fetchSignal]);
 
@@ -118,8 +141,9 @@ export default function SidebarMLSignals({ symbol }: Props) {
               return (
                 <div key={s.feature} className="signal-row">
                   <span className="signal-name">{s.feature}</span>
-                  <div className="signal-right">
+                  <div className="signal-right" style={{ gap: "10px" }}>
                     <span className="signal-val">{fmtVal(s.feature, s.value)}</span>
+                    <ShapForceBar shap={s.shap} />
                     <span className={`sig-tag ${cls}`}>{tag}</span>
                   </div>
                 </div>
@@ -142,6 +166,9 @@ export default function SidebarMLSignals({ symbol }: Props) {
                   background: result.signal === "BUY" ? "var(--green)" : result.signal === "SELL" ? "var(--red)" : "var(--amber)"
                 }}
               />
+            </div>
+            <div style={{ marginTop: 8, fontSize: "9px", color: "var(--t4)", fontFamily: "var(--mono)", lineHeight: 1.4, letterSpacing: ".02em" }}>
+              Experimental model · ~60% backtest accuracy · Not financial advice
             </div>
           </div>
         </>

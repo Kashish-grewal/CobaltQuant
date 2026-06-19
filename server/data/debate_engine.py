@@ -1,12 +1,12 @@
 """
 Cobalt — Debate Engine (Phase 3)
 ==================================
-Streams convincing Bull / Bear / Neutral arguments word-by-word,
-simulating LangGraph + Claude streaming behaviour.
+Streams Bull / Bear / Neutral arguments word-by-word via WebSocket.
 
-To swap in a real LLM (Claude, GPT-4, Gemini):
-  Replace `_stream_argument()` with an actual streaming API call.
-  The WebSocket protocol (chunk by chunk, done flag) is already correct.
+Two modes:
+  1. LIVE (OPENAI_API_KEY set): Streams from OpenAI GPT-4o-mini in real time.
+  2. OFFLINE (no key): Falls back to curated argument templates — clearly
+     labelled as "offline" so the frontend can show a notice.
 """
 
 import asyncio
@@ -147,31 +147,162 @@ async def _stream_openai(role: str, ticker: str, api_key: str, ws_send) -> bool:
         return False
 
 
+async def _stream_gemini_combined(ticker: str, api_key: str, ws_send) -> bool:
+    """Stream all three debate arguments from Gemini in a single request and parse on the fly."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse&key={api_key}"
+    headers = {
+        "Content-Type": "application/json",
+    }
+
+    prompt = (
+        f"Write a stock debate analysis for {ticker}.\n"
+        "Format your response EXACTLY like this:\n"
+        "[BULL]\n"
+        "Write a 3-4 sentence bullish investment thesis.\n"
+        "[BEAR]\n"
+        "Write a 3-4 sentence bearish investment thesis.\n"
+        "[NEUTRAL]\n"
+        "Write a 3-4 sentence neutral assessment.\n"
+        "Do not include any other markdown tags, formatting, or text outside these brackets."
+    )
+
+    body = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 600,
+            "temperature": 0.7,
+            "thinkingConfig": {
+                "thinkingBudget": 0
+            }
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", url, headers=headers, json=body, timeout=15.0) as resp:
+                if resp.status_code != 200:
+                    logger.warning(f"Combined Gemini returned status {resp.status_code}")
+                    return False
+
+                current_agent = None
+                buffer = ""
+
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        try:
+                            chunk_data = json.loads(data_str)
+                            parts = chunk_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                            if not parts:
+                                continue
+                            chunk = parts[0].get("text", "")
+                            if not chunk:
+                                continue
+                            
+                            buffer += chunk
+                            while True:
+                                bracket_idx = buffer.find("[")
+                                if bracket_idx == -1:
+                                    if current_agent and buffer:
+                                        await ws_send({
+                                            "type": "debate_chunk",
+                                            "agent": current_agent,
+                                            "chunk": buffer,
+                                        })
+                                    buffer = ""
+                                    break
+                                else:
+                                    pre_bracket = buffer[:bracket_idx]
+                                    if current_agent and pre_bracket:
+                                        await ws_send({
+                                            "type": "debate_chunk",
+                                            "agent": current_agent,
+                                            "chunk": pre_bracket,
+                                        })
+                                    buffer = buffer[bracket_idx:]
+                                    
+                                    close_bracket_idx = buffer.find("]")
+                                    if close_bracket_idx != -1:
+                                        tag = buffer[1:close_bracket_idx].upper().strip()
+                                        if "BULL" in tag:
+                                            current_agent = "bull"
+                                        elif "BEAR" in tag:
+                                            current_agent = "bear"
+                                        elif "NEUTRAL" in tag or "HOLD" in tag:
+                                            current_agent = "neutral"
+                                        buffer = buffer[close_bracket_idx + 1:]
+                                    else:
+                                        if len(buffer) > 15:
+                                            if current_agent:
+                                                await ws_send({
+                                                    "type": "debate_chunk",
+                                                    "agent": current_agent,
+                                                    "chunk": buffer[0],
+                                                })
+                                            buffer = buffer[1:]
+                                        else:
+                                            break
+                        except Exception:
+                            pass
+        return True
+    except Exception as e:
+        logger.warning(f"Error streaming combined from Gemini: {e}")
+        return False
+
+
 async def stream_debate(
     ticker: str,
     ws_send,                  # callable: async (dict) -> None
     word_delay: float = 0.045,
 ) -> None:
     """
-    Stream all three agent arguments concurrently.
-    Each chunk is sent as a separate WebSocket message.
+    Stream all three agent arguments.
+    Uses a single request for Gemini (parsed on the fly),
+    otherwise falls back to OpenAI or curated templates.
     """
     await ws_send({"type": "debate_start", "ticker": ticker})
 
     from config import get_settings
     settings = get_settings()
-    api_key = settings.openai_api_key
+    openai_key = settings.openai_api_key
+    gemini_key = settings.gemini_api_key
 
-    use_live = api_key and api_key != "your_openai_key_here"
+    use_openai = openai_key and openai_key != "your_openai_key_here"
+    use_gemini = gemini_key and gemini_key != "your_gemini_key_here"
 
+    # Try combined Gemini stream first
+    if use_gemini:
+        success = await _stream_gemini_combined(ticker, gemini_key, ws_send)
+        if success:
+            await ws_send({"type": "debate_done", "ticker": ticker})
+            return
+
+    # Fallback path (OpenAI or curated templates)
     async def _run_agent(role: str, jitter: float):
         await asyncio.sleep(jitter)  # stagger agent starts slightly
         success = False
-        if use_live:
-            success = await _stream_openai(role, ticker, api_key, ws_send)
+
+        if use_openai:
+            success = await _stream_openai(role, ticker, openai_key, ws_send)
 
         if not success:
-            # Fallback to simulated word-by-word streaming
+            # Fallback to curated argument templates (offline mode)
+            # Send an "offline" marker so the frontend can display a notice
+            await ws_send({
+                "type":  "debate_chunk",
+                "agent": role,
+                "chunk": "",
+                "offline": True,
+            })
             text = _get_argument(ticker, role)
             words = text.split()
             for word in words:
@@ -183,7 +314,7 @@ async def stream_debate(
                 # Slight randomness makes it feel like real LLM streaming
                 await asyncio.sleep(word_delay + random.uniform(-0.01, 0.02))
 
-    # Run all three agents concurrently (simulates parallel LLM calls)
+    # Run all three agents concurrently
     await asyncio.gather(
         _run_agent("bull",    jitter=0.0),
         _run_agent("bear",    jitter=0.25),
