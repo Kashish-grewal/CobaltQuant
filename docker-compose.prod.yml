@@ -14,8 +14,8 @@ services:
   # ── FastAPI Backend ───────────────────────────────────────────────────────────
   server:
     build:
-      context: ./server
-      dockerfile: Dockerfile.prod
+      context: .
+      dockerfile: server/Dockerfile.prod
     container_name: cobalt_server_prod
     ports:
       - "8000:8000"

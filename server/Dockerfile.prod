@@ -8,13 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY server/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy ALL application source code
-COPY main.py ws_manager.py config.py app_state.py db.py persistence.py auth.py ./
-COPY data/ ./data/
-COPY routes/ ./routes/
+COPY server/main.py server/ws_manager.py server/config.py server/app_state.py server/db.py server/persistence.py server/auth.py ./
+COPY server/data/ ./data/
+COPY server/routes/ ./routes/
 
 # Create non-root user for security (principle of least privilege)
 RUN adduser --disabled-password --gecos "" appuser \
