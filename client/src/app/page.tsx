@@ -102,7 +102,7 @@ export default function LandingPage() {
             </h1>
             
             <p className="lp-tagline">
-              An autonomous quantitative intelligence terminal. Real-time multi-agent decision support, predictive feature scoring, and streaming sentiment analysis.
+              A collaborative intelligence terminal for global financial markets. Stream live asset indexes, explore collective AI logic, and track advanced forecasting models.
             </p>
           </div>
 

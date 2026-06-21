@@ -25,11 +25,11 @@
   --serif: "Instrument Serif", serif;
 
   /* Sand-gray text hierarchy for print layout appearance (high-contrast readability) */
-  --t0: #fafaf7;
-  --t1: #deded9;
-  --t2: #c8c9cc;
-  --t3: #a1a3a8;
-  --t4: #7b7e85;
+  --t0: #ffffff;
+  --t1: #fafaf7;
+  --t2: #e2e4e8;
+  --t3: #c4c6cc;
+  --t4: #a1a3a8;
 
   /* Editorial Accents */
   --blue:        #ff6000; /* International Orange */
@@ -841,23 +841,25 @@ button { cursor:pointer; border:none; font-family:inherit; background:none; colo
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 16px 24px;
   font-family: var(--mono);
   font-size: 12px;
-  font-weight: 700;
-  color: var(--t0);
-  background: var(--bg);
-  border: 1px solid var(--b1);
+  font-weight: 800;
+  color: var(--bg);
+  background: var(--blue);
+  border: 1px solid var(--blue);
   text-decoration: none;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  transition: all 180ms var(--ease);
+  letter-spacing: 0.12em;
+  transition: all 200ms var(--ease);
+  box-shadow: 0 4px 12px var(--blue-glow);
 }
 .lp-enter-btn:hover {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--blue-b);
+  border-color: var(--blue-b);
   color: var(--bg);
-  box-shadow: 0 0 16px var(--blue-glow);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px var(--blue-glow);
 }
 .lp-enter-arrow {
   font-size: 14px;
