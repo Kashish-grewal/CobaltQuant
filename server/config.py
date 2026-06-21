@@ -5,6 +5,7 @@ Uses pydantic-settings so every setting can be overridden by environment variabl
 This is the single source of truth for all config in the app.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 from functools import lru_cache
 import secrets
 
@@ -64,6 +65,22 @@ class Settings(BaseSettings):
     # Internal: auto-generated fallback JWT secret for dev mode.
     # Generated ONCE at Settings init, not on every property access.
     _fallback_jwt_secret: str = ""
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        import json
+        if isinstance(v, str):
+            v = v.strip()
+            # If it looks like a JSON array, try to parse it
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            # Otherwise, split by comma
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
 
     def model_post_init(self, __context) -> None:
         """Generate a stable fallback JWT secret once at init time."""

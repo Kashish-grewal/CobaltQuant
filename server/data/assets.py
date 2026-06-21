@@ -13,7 +13,6 @@ HOW TO ADD A NEW ASSET:
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 # ── Asset Metadata ─────────────────────────────────────────────────────────────
 # symbol → { name, sector, approx_price, market_cap_billions }
 # approx_price is used as the GBM starting price in mock mode.
