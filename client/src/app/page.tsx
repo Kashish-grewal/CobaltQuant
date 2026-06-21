@@ -71,23 +71,23 @@ export default function LandingPage() {
           <div className="lp-index-list">
             <div className="lp-index-item">
               <span className="lp-index-num">SECTION 01</span>
-              <span className="lp-index-label">Market Streaming</span>
-              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Real-time WebSockets asset streaming feed</span>
+              <span className="lp-index-label">Live Market Feed</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Real-time tracking of asset prices and volume dynamics</span>
             </div>
             <div className="lp-index-item">
               <span className="lp-index-num">SECTION 02</span>
-              <span className="lp-index-label">Vader Sentiment</span>
-              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Social sentiment and NLP analysis pipelines</span>
+              <span className="lp-index-label">Public Sentiment</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Media headlines parsed to measure market consensus</span>
             </div>
             <div className="lp-index-item">
               <span className="lp-index-num">SECTION 03</span>
-              <span className="lp-index-label">AI Agent Debate</span>
-              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Consensus discussions via GPT & Gemini models</span>
+              <span className="lp-index-label">Consensus Debate</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Multi-agent analysis providing balanced perspectives</span>
             </div>
             <div className="lp-index-item">
               <span className="lp-index-num">SECTION 04</span>
-              <span className="lp-index-label">XGBoost Signals</span>
-              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Predictive direction indices and SHAP explanations</span>
+              <span className="lp-index-label">Predictive Index</span>
+              <span style={{ fontSize: "9.5px", color: "var(--t3)", marginTop: "2px" }}>Advanced models calculating directional price trends</span>
             </div>
           </div>
         </div>
@@ -146,14 +146,14 @@ export default function LandingPage() {
         {/* Right Column: Technical Logs & Enter Panel */}
         <div className="lp-col lp-col-right">
           <div>
-            <div className="lp-log-title">System Boot Process</div>
+            <div className="lp-log-title">Terminal Stream Process</div>
             
             <div className="lp-boot-log">
-              <BootLine delay={600} text="WebSocket price streaming (16 assets, 6 sectors)" />
-              <BootLine delay={900} text="VADER sentiment engine + Yahoo Finance pipeline" />
-              <BootLine delay={1200} text="Multi-agent AI debate (GPT-4o / Gemini)" />
-              <BootLine delay={1500} text="XGBoost signal engine + SHAP explainability" />
-              <BootLine delay={1800} text="Redis pub/sub, batch persistence, structured logging" />
+              <BootLine delay={600} text="Establishing connection to global asset feeds..." />
+              <BootLine delay={900} text="Analysing financial media and market headlines..." />
+              <BootLine delay={1200} text="Initialising multi-agent debate pipelines..." />
+              <BootLine delay={1500} text="Generating predictive trend metrics..." />
+              <BootLine delay={1800} text="Synthesising data streams into terminal interface..." />
             </div>
           </div>
 
