@@ -7,6 +7,7 @@ This is the single source of truth for all config in the app.
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from functools import lru_cache
+from typing import Any
 import secrets
 
 
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     database_url: str = ""
 
     # CORS — list of allowed origins
-    allowed_origins: list[str] = [
+    allowed_origins: Any = [
         "http://localhost:3000",
         "http://localhost:3001",
     ]
